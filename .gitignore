@@ -1,0 +1,35 @@
+# Virtual environment
+.venv/
+
+# Environment variables - NEVER commit these
+.env
+
+# Logs
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Data files - never commit raw data
+*.csv
+*.json
+*.parquet
+*.xlsx
+
+# Pytest cache
+.pytest_cache/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/

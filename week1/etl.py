@@ -8,17 +8,15 @@ logger = get_logger(__name__)
 
 # Extraction Stage
 
-def extract(filepath:str) -> list:
+def extract(filepath:str):
     logger.info(f"Starting extraction from {filepath}")
 
     try:
-        records=[]
         with open(filepath, "r") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                records.append(row)
-        logger.info(f"Extracted {len(records)} records")
-        return records
+                logger.debug(f"Yielding row: {row}")
+                yield(row)
 
     except FileNotFoundError:
         logger.error(f"File not found: {filepath}")
@@ -31,13 +29,15 @@ def extract(filepath:str) -> list:
 
 # Transformation Stage
 
-def transform(data: list) -> list:
-    logger.info(f"Starting transformaition on {len(data)} records")
+def transform(data) -> list:
+    logger.info(f"Starting transformation")
     
     try:
         cleaned = []
-        for row in data:
+        total = 0
 
+        for row in data:
+            total += 1
             # Skip rows with missing name
             if not row.get("name"):
                 logger.warning(f"Skipping row with missing name: {row}")
@@ -52,7 +52,7 @@ def transform(data: list) -> list:
 
             cleaned.append(row)
 
-        logger.info(f"Transformation completed. Transformed: {len(cleaned)} / {len(data)} records")
+        logger.info(f"Transformation completed. Transformed: {len(cleaned)} / {total} records")
         return cleaned
 
     except Exception as e:
@@ -70,8 +70,8 @@ def load(data: list) -> None:
     logger.info("Load complete")
 
 if __name__ == "__main__":
-    data = extract("data.csv")
-    data = transform(data)
+    raw = extract("data.csv")
+    data = transform(raw)
     load(data)
 
     

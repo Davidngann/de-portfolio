@@ -1,7 +1,7 @@
 import csv
 from week1.logger import get_logger
 from week1.exceptions import ExtractionError, TransformationError
-
+from week1.config import get_config
 
 logger = get_logger(__name__)
 
@@ -70,8 +70,13 @@ def load(data: list) -> None:
     logger.info("Load complete")
 
 if __name__ == "__main__":
-    raw = extract("data.csv")
+    config = get_config()
+    logger.info(f"Pipeline is starting | ENV: {config['pipeline_env']}")
+
+    raw = extract(config['data_filepath'])
     data = transform(raw)
     load(data)
+
+    logger.info("Pipeline complete")
 
     

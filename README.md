@@ -5,7 +5,7 @@ A Production grade ETL pipeline as a part of my 9-month data engineering study
 Read a CSV file, validates and cleans the data, then load the valid records.
 Invalid records are skipped with warnings. All activity is logged through fileHandler and streamHandler.
 
-# Current Project Structure
+## Current Project Structure
 ```
 DE-PORTFOLIO
 ├── week1/
@@ -21,12 +21,32 @@ DE-PORTFOLIO
 └── README.md 
 ```
 
+## Setup
+```bash
+# 1. Clone the repo
+git clone https://github.com/Davidngann/de-portfolio.git
+cd de-portfolio
+
+# 2. Create virtual environment
+python -m venv .venv
+.venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -r week1/requirements.txt
+
+# 4. Create .env file
+cp .env.example .env
+
+# 5. Run the pipeline
+python -m week1.etl
+```
+
 ## Environment Variables
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | DATA_FILEPATH | Yes | — | Path to input CSV file |
 | LOG_LEVEL | No | INFO | Logging level (DEBUG/INFO/WARNING/ERROR) |
-| PIPELINE_ENV | No | development | Environment name |
+| PIPELINE_ENV | No | DEVELOPMENT | Environment name |
 
 
 ## Data Engineering Concepts Used

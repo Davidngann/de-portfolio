@@ -38,6 +38,7 @@
 
 # -------------------------------------------- #
 # -------- Prove the memory difference --------#
+# -------------------------------------------- #
 import sys
 numbers_list = list(range(1000000))
 print(f"List size: {sys.getsizeof(numbers_list):,} bytes")

@@ -3,6 +3,8 @@
 **Database:** PostgreSQL 17 ([neon.tech](https://neon.com/))  
 **Date:** March 2026
 
+** A little note: the word record, data, and rows in this analysis might be used interchangeably.
+
 ## Setup
 The Dataset is created synthetically with 500,000 rows for NYC Taxi Trips simple simulation  
 The dataset sample can be seen in: [sample](../week2/dataset_top10_sample.csv).  
@@ -58,10 +60,7 @@ FROM generate_series(1, 500000);
 ## Query 1 — Function on Indexed Column (EXTRACT vs Range Filter)
 
 ### Problem
-Let say we want to get all the rows from our db with `pickup_datetime` in 2023.
-`pickup_datetime` also has been indexed since it got queried frequently.
-It might looks fancy and cleaner if we use certain function like `EXTRACT (YEAR FROM pickup_datetime) = 2023`.
-Sadly, using extra function might actually hurt the query performance.
+A common pattern when filtering by year is to wrap the column in EXTRACT(YEAR FROM pickup_datetime).Tt reads cleanly and feels intuitive. However, applying any function to an indexed column actually breaks index usage and corrupts the planner's row estimate, causing PSQL to default to a parallel sequential scan even when a faster plan exists. This query demonstrates the cost of that pattern and the correct rewrite.
 
 ### Query (before)
 ```sql
@@ -119,7 +118,6 @@ Execution Time: 65.144 ms
 - Execution time: 
     - BEFORE:   - Planning Time: 0.083 ms - Execution Time: 229.175 ms
     - AFTER:    - Planning Time: 0.064 ms - Execution Time: 63.463 ms
-
 ```
 Although, both queries benefit from page caching, the specific range filter is faster because accurate row estimates allowed the planner to use a single-worker sequential scan, avoiding the overhead of launching and coordinating parallel workers.
 
@@ -131,10 +129,8 @@ The (after) query is like because you know roughly (with high confidence by chec
 
 ## Query 2 — Missing Index on Filtered Column
 ### Problem
-#### What actually happens under the hood when we filter and sort our data with unindexed columns?  
-If we have a certain queries that is running frequently, we might see better performance (cheaper \$\$) by adding index to the frequently queried columns.  
-Note that, even though index might help in many cases, it should be used strategically as PSQL might decide to not even use the index if it's not worth it.  
-So, how do we know that PSQL uses index to perform our specific query?
+A dashboard query filters trips by pickup zone and sorts by fare. Without an index on `pickup_zone`, PSQL scans all 500,000 rows for every request. At scale this becomes the bottleneck.  
+The question is whether adding an index actually helps, and what the tradeoff looks like.
 
 ### Query
 ```SQL
@@ -167,7 +163,7 @@ Gather Merge  (cost=12843.82..19113.45 rows=53736 width=74) (actual time=65.751.
 Planning Time: 0.085 ms
 Execution Time: 102.218 ms
 ```
-Let's stroll around:
+Let's stroll around:  
 From the execution perspective (Bottom-Up), what happened is:
 1. `Parallel Seq Scan` -> We run a parallel seq scan which divided into three chunks (`loops=3`) -> We have three workers walkthrough the database and check on each row that they visit if `pickup_zone = 'JFK'`   
 *HOLD ON! why three workers? I can only see two workers launched! -> I will explain later.  
@@ -206,7 +202,7 @@ Sort  (cost=17654.81..17816.02 rows=64483 width=74) (actual time=60.225..69.603 
 Planning Time: 10.936 ms
 Execution Time: 72.796 ms
 ```
-Let's stroll around:
+Let's stroll around:  
 From the execution perspective (Bottom-Up), what happened is:
 1. `Bitmap Index Scan on idx_trips_zone_fare` -> After we add index `ON trips(pickup_zone, fare_amount DESC)`, and PSQL deems index scan is worth it, it starts by running bitmap index scan to get the actual location of each rows with index condition of `pickup_zone = 'JFK'` from our `WHERE` clause. 
 2. `Bitmap Heap Scan` -> The collected pages and slots from step 1 will be visited and rechecked to get the actual data that we need.
@@ -239,8 +235,7 @@ From the execution perspective (Bottom-Up), what happened is:
 ## Query 3 — GROUP BY + ORDER BY Aggregation
 
 ### Problem
-Is aggregation costly?
-Will indexing help to reduce the cost of aggregation?
+Business reporting requires aggregating revenue across all zones. Unlike filtered queries, aggregations must visit every row regardless of indexes. The question is whether parallelism and hash aggregation make this acceptable at scale, and what the plan looks like when PSQL distributes the work across workers.
 
 ### Query
 ```SQL
@@ -276,7 +271,7 @@ Planning Time: 0.095 ms
 Execution Time: 168.027 ms
 ```
 ### Interpretation
-Let's stroll around:
+Let's stroll around:  
 From the execution perspective (Bottom-Up), what happened is:
 1. `Parallel Seq Scan` -> We have three workers running paralle seq scan.
 2. `Partial HashAggregate` -> rather than doing the aggregation after all of the records gathered, each worker performs aggregation only on the records they have.
@@ -294,7 +289,7 @@ From the execution perspective (Bottom-Up), what happened is:
     [A, B, C, C, B, A, A, E, F, B, C] -> harder, requiring more buckets allocated to anticipate all of the fruits.
     [A, A, A, B, B, B, C, C, C, D, D] -> easier, we know we only need one bucket at a time. When new fruit comes, we just change to the new bucket.
 
-- Why does Postgres use two-phase aggregation (Partial → Finalize)?
+- Why does PSQL use two-phase aggregation (Partial → Finalize)?
     - To prevent bottleneck by scanning all of the data all at once. This is when parallel work shines.
 
 - What does `Batches: 1` tell you?

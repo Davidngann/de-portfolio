@@ -25,6 +25,7 @@ Thumbs.db
 *.json
 *.parquet
 *.xlsx
+data
 
 # Pytest cache
 .pytest_cache/
@@ -36,3 +37,8 @@ build/
 
 test_personal
 learning_tracking.md
+
+# Terraform
+*.tfstate
+*.tfstate.backup
+.terraform/

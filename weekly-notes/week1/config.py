@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 # Load .env file into environment
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 def get_config() -> dict:
     """

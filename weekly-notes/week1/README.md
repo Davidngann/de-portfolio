@@ -9,16 +9,16 @@ Invalid records are skipped with warnings. All activity is logged through fileHa
 ```
 DE-PORTFOLIO
     └──weekly-notes
-            └── week1/
-                ├── __init__.py         # Package marker
-                ├── etl.py              # Main Extract, Transform, and Load functions
-                ├── logger.py           # Custom logging setup
-                ├── exceptions.py       # Current exception handlers (placeholder)
-                ├── config.py           # Environment variables loader
-                ├── requirements.txt    # Dependencies
-                ├── .env                # Local config - ignored for git
-                ├── .env.example        # example for filling .env file
-                └── README.md           
+        └── week1/
+            ├── __init__.py         # Package marker
+            ├── etl.py              # Main Extract, Transform, and Load functions
+            ├── logger.py           # Custom logging setup
+            ├── exceptions.py       # Current exception handlers (placeholder)
+            ├── config.py           # Environment variables loader
+            ├── requirements.txt    # Dependencies
+            ├── .env                # Local config - ignored for git
+            ├── .env.example        # example for filling .env file
+            └── README.md           
 ```
 
 ## Setup

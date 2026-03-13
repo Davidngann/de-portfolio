@@ -111,7 +111,7 @@ psql -U user_name -d taxi_db -f sql/create_table.sql
 
 ### 7. Run the pipeline
 ```bash
-pyton run.py
+python run.py
 ```
 ---
 

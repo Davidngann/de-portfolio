@@ -6,6 +6,9 @@
 
 # Logs
 *.log
+logs/*.log
+!logs/.gitkeep
+
 
 # Python cache
 __pycache__/
@@ -35,8 +38,11 @@ dist/
 build/
 *.egg-info/
 
+# Scratch
 test_personal
 learning_tracking.md
+scrath_test.py
+
 
 # Terraform
 *.tfstate

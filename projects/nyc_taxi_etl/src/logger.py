@@ -16,6 +16,7 @@ def get_logger(name: str) -> logging.Logger:
 
     # File handler
     log_path = Path(__file__).parent.parent / "logs" / "pipeline.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True) 
     file_handler = logging.FileHandler(log_path)
     file_handler.setLevel(logging.DEBUG)
 

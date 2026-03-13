@@ -14,9 +14,9 @@ logger = get_logger(__name__)
 # dropoff_zone_id           - Not nullable in destination schema
 
 # KEEP if null:
-# passenger_count           - self-reported, often missing, but still useable
-# tip_amount                - missing tip means $0 tip in many cases
-# payment_type              - useful row overall without payment method
+# passenger_count           - Self-reported, often missing, but still usable
+# tip_amount                - Missing tip means $0 tip in many cases
+# payment_type              - Useful row overall without payment method
 
 DROP_IF_NULL = [
     "tpep_pickup_datetime",
@@ -45,7 +45,7 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
         # --- Step 1: Drop nulls on required columns ---
         df = df.dropna(subset=DROP_IF_NULL)
         len_after_null_drop = len(df)
-        len_dropped_nulls = len_after_null_drop - len_initial
+        len_dropped_nulls = len_initial - len_after_null_drop
 
         logger.info(
             f"Null drop complete: {len_dropped_nulls:,} rows removed, {len_after_null_drop:,} remaining | dropped percentage: {len_dropped_nulls/len_after_null_drop*100:.1f}%")
@@ -87,6 +87,15 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
         len_dropped_duration = len_before_duration - len_after_dropped_duration
 
         logger.info(f"Duration filter complete: {len_dropped_duration:,} rows removed, {len_after_dropped_duration:,} remaining | dropped percentage: {len_dropped_duration/len_after_dropped_duration*100:.1f}% ")
+
+        # Drop rows with unreasonably long duration
+        # 1440 minutes = 24 hours
+        len_before_max_duration = len(df)
+        df = df[df['trip_duration_minutes'] <= 1440]
+        len_after_dropped_max_duration = len(df)
+        len_dropped_max_duration = len_before_max_duration - len_after_dropped_max_duration
+        logger.info(f"Max duration filter complete: {len_dropped_max_duration:,} rows removed, {len_after_dropped_max_duration:,} remaining | dropped percentage: {len_dropped_max_duration/len_after_dropped_max_duration*100:.1f}% ")
+
 
         # --- Step 5: Rename columns to match destination schema ---
         df = df.rename(columns={

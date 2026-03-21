@@ -65,7 +65,7 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
         df['tpep_dropoff_datetime'] = pd.to_datetime(df['tpep_dropoff_datetime'])
         df['trip_distance'] = df['trip_distance'].astype("float64")
         df['fare_amount'] = df['fare_amount'].astype("float64")
-        df['tip_amount'] = df['tip_amount'].astype("float64")
+        df['tip_amount'] = df['tip_amount'].astype("Float64")
         df['total_amount'] = df['total_amount'].astype("float64")
         df["PULocationID"] = df['PULocationID'].astype("int16")
         df['DOLocationID'] = df['DOLocationID'].astype("int16")

@@ -223,3 +223,58 @@ Fix planned in the next few weeks with airflow.
 | SOURCE_FILE | Yes | — | Parquet filename in data/ |
 | BATCH_SIZE | No | 5000 | Rows per insert batch |
 
+
+---
+---
+## Testing
+### Test Suite overview
+| File | Tests | What it covers |
+|---|---|---|
+| `tests/test_extract.py` | 4 | Schema validation, missing file, missing expected columns, empty file |
+| `tests/test_transform.py` | 12 | Business rule, null handling, type casting, column rename, row counts, duration rules |
+| `tests/test_load.py` | 5 | Row counts, bad connection config, batch size variations (parametrized) |
+
+### How to run the test
+**Run the full suite from the project root:**
+```bash
+pytest
+```
+
+**Run with verbose output:**
+```bash
+pytest -v
+```
+
+**Run a single test file:**
+```bash
+pytest projects/nyc_taxi_etl/tests/test_transform.py -v
+```
+
+**Run with coverage report:**
+```bash
+pytest --cov=src --cov-report=term-missing
+```
+
+### Coverage
+| File | Coverage | Notes |
+|---|---|---|
+| `extract.py` | 100% | - |
+| `transform.py` | 96% | Generic unexpected exception handler not covered | 
+| `load.py` | 92% | Per-batch failure path not tested |
+| `validate.py` | 0% | GE runs via `run.py`, not called in test suite |
+| `config.py` | 0% | Verified via pipeline run, not unit tests |
+
+Overall Coverage: 77%
+
+### Great Expectations
+6 data quality expectations run automatically after `transform()` and before `load()` as part of `python run.py`:
+- `fare_amount` -> No nulls, must be above 0
+- `trip_distance` -> No nulls, must be above 0
+- `pickup_zone_id` -> No nulls
+- `trip_duration_minutes` -> Must be `>0` and `<=1440` minutes 
+
+Pipeline raises `TransformationError` nd stops if any expectation fails.
+
+# Known coverage gaps
+- `validate.py` -> no pytest coverage. Still verified manually by injecting a bad row and confirming `TransformationError` is raised correctly
+- Batch failure path in `load.py` is not tested yet.

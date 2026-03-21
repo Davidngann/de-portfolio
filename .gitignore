@@ -41,10 +41,14 @@ build/
 # Scratch
 test_personal
 learning_tracking.md
-scrath_test.py
-
+DE_Roadmap_2026.md
+scratch_run.py
 
 # Terraform
 *.tfstate
 *.tfstate.backup
 .terraform/
+
+# Pytest
+.coverage
+htmlcov/

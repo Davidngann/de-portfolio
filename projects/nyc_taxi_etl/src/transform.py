@@ -4,6 +4,19 @@ from src.logger import get_logger
 
 logger = get_logger(__name__)
 
+EXPECTED_COLUMNS = {
+    "tpep_pickup_datetime",
+    "tpep_dropoff_datetime",
+    "passenger_count",
+    "trip_distance",
+    "PULocationID",
+    "DOLocationID",
+    "fare_amount",
+    "tip_amount",
+    "total_amount",
+    "payment_type",
+}
+
 # --- Handle Null ---
 # DROP if null:
 # pickup_at, dropoff_at     - Duration cannot be derived without both
@@ -42,7 +55,18 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
     len_initial = len(df)
 
     try:
-        # --- Step 1: Drop nulls on required columns ---
+        # Validate & subset
+        actual_columns = set(df.columns)
+        missing_columns = EXPECTED_COLUMNS - actual_columns
+        if missing_columns:
+            raise TransformationError(
+                f"Schema validation for transformation failed. Missing columns {missing_columns}"
+            )
+        logger.info("Schema validation for transformation passed")
+
+        df = df[list(EXPECTED_COLUMNS)].copy()
+
+        # Drop nulls
         df = df.dropna(subset=DROP_IF_NULL)
         len_after_null_drop = len(df)
         len_dropped_nulls = len_initial - len_after_null_drop
@@ -50,17 +74,18 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
         logger.info(
             f"Null drop complete: {len_dropped_nulls:,} rows removed, {len_after_null_drop:,} remaining | dropped percentage: {pct_null_dropped:.1f}%")
         
-        # --- Step 2: Drop invalid business values ---
+        # Business filters
         len_before_business = len(df)
         df = df[df['trip_distance'] > 0]
         df = df[df['fare_amount'] > 0]
+        df = df[df['total_amount'] > 0]
         len_after_dropped_business = len(df)
         len_dropped_business = len_before_business - len_after_dropped_business 
         pct_dropped_business = (len_dropped_business/len_before_business*100) if len_before_business else 0
 
         logger.info(f"Business rule filter complete: {len_dropped_business:,} rows removed, {len_after_dropped_business:,} remaining | dropped percentage: {pct_dropped_business:.1f}% ")
         
-        # --- Step 3: Cast type explicitly ---
+        # Cast type explicitly
         df['tpep_pickup_datetime'] = pd.to_datetime(df['tpep_pickup_datetime'])
         df['tpep_dropoff_datetime'] = pd.to_datetime(df['tpep_dropoff_datetime'])
         df['trip_distance'] = df['trip_distance'].astype("float64")
@@ -76,31 +101,22 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
 
         logger.info("Type casting complete")
 
-        # --- Step 4: Derive trip_duration_minutes ---
+        # Derive trip_duration_minutes
         df['trip_duration_minutes'] = (
             (df['tpep_dropoff_datetime'] - df['tpep_pickup_datetime']).dt.total_seconds()/60
         ).round(2)
 
-        # Drop rows where duration is <= 0
+        # Filter trip_duration_minutes outliers
+        # Drop rows with unreasonably below or equal to zero and long duration <= 1440 minutes (24 hours)
         len_before_duration = len(df)
-        df = df[df['trip_duration_minutes'] > 0]
+        df = df[(df['trip_duration_minutes'] > 0) & (df['trip_duration_minutes'] <= 1440)]
         len_after_dropped_duration = len(df)
         len_dropped_duration = len_before_duration - len_after_dropped_duration
         pct_dropped_duration = (len_dropped_duration/len_before_duration*100) if len_before_duration else 0
 
         logger.info(f"Duration filter complete: {len_dropped_duration:,} rows removed, {len_after_dropped_duration:,} remaining | dropped percentage: {pct_dropped_duration:.1f}% ")
 
-        # Drop rows with unreasonably long duration
-        # 1440 minutes = 24 hours
-        len_before_max_duration = len(df)
-        df = df[df['trip_duration_minutes'] <= 1440]
-        len_after_dropped_max_duration = len(df)
-        len_dropped_max_duration = len_before_max_duration - len_after_dropped_max_duration
-        pct_dropped_max_duration = (len_dropped_max_duration/len_before_max_duration*100) if len_before_max_duration else 0
-        logger.info(f"Max duration filter complete: {len_dropped_max_duration:,} rows removed, {len_after_dropped_max_duration:,} remaining | dropped percentage: {pct_dropped_max_duration:.1f}% ")
-
-
-        # --- Step 5: Rename columns to match destination schema ---
+        # Rename columns to match the destination table
         df = df.rename(columns={
             "tpep_pickup_datetime":  "pickup_at",
             "tpep_dropoff_datetime": "dropoff_at",
@@ -118,12 +134,9 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
         total_dropped = len_initial - len(df)
         pct_total_dropped = (total_dropped/len_initial*100) if len_initial else 0
         logger.info(f"Transformation complete: {len(df):,} rows ready for load | total dropped: {total_dropped:,}  | % dropped from initial: {pct_total_dropped:.1f}%")
-
+    
         return df
-    
-    except TransformationError:
-        raise 
-    
+
     except Exception as e:
         raise TransformationError(f"Unexpected error during transformation: {e}")
     

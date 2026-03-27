@@ -13,23 +13,33 @@ def valid_row() -> dict:
     Baseline across all test files.
     """
     return {
-        "tpep_pickup_datetime":  pd.Timestamp("2025-04-01 08:00:00"),
-        "tpep_dropoff_datetime": pd.Timestamp("2025-04-01 08:30:00"),
-        "passenger_count":       1.0,
-        "trip_distance":         3.5,
-        "PULocationID":          100,
-        "DOLocationID":          200,
-        "fare_amount":           15.0,
-        "tip_amount":            3.0,
-        "total_amount":          18.0,
-        "payment_type":          1.0,
+        "VendorID"              : 1,
+        "tpep_pickup_datetime"  : pd.Timestamp("2025-04-01 08:00:00"),
+        "tpep_dropoff_datetime" : pd.Timestamp("2025-04-01 08:30:00"),
+        "passenger_count"       : 1.0,
+        "trip_distance"         : 3.5,
+        "RatecodeID"            : 1.0,
+        "store_and_fwd_flag"    : "N",
+        "PULocationID"          : 100,
+        "DOLocationID"          : 200,
+        "payment_type"          : 1,
+        "fare_amount"           : 15.0,
+        "extra"                 : 4.5,
+        "mta_tax"               : 0.5,
+        "tip_amount"            : 3.0,
+        "tolls_amount"          : 0.0,
+        "improvement_surcharge" : 1.0,
+        "total_amount"          : 24.0,
+        "congestion_surcharge"  : 2.5,
+        "Airport_fee"           : 0.0,
+        "cbd_congestion_fee"    : 0.50
     }
 
 @pytest.fixture
 def valid_dataframe(valid_row) -> pd.DataFrame:
     """
     A single-row Dataframe built from valid_row fixture.
-    Used when a test needs a DataFrame directly, not a  dict
+    Used when a test needs a DataFrame directly, not a dict
     """
     return pd.DataFrame([valid_row])
 
@@ -89,6 +99,6 @@ def db_connection(test_db_config):
 
     # Teardown which runs after every test, regardless of pass/fail
     with conn.cursor() as cur:
-        cur.execute("TRUNCATE TABLE staging.yellow_trips RESTART IDENTITY")
+        cur.execute("TRUNCATE TABLE raw.yellow_trips, staging.yellow_trips RESTART IDENTITY")
     conn.commit()
     conn.close()    

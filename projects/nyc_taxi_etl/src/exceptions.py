@@ -18,3 +18,4 @@ class LoadError(Exception):
     or a batch insert cannot completed.
     """
     pass
+

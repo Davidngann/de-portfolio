@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 from unittest.mock import patch
-from src.extract import extract, EXPECTED_COLUMNS
+from src.extract import extract, EXPECTED_SOURCE_RAW_COLUMNS
 from src.exceptions import ExtractionError
 
 
@@ -12,7 +12,7 @@ def test_extract_returns_expected_columns(valid_dataframe):
         mock_read.return_value = valid_dataframe
         result = extract("mock_file.parquet")
 
-    assert set(result.columns) == EXPECTED_COLUMNS
+    assert set(result.columns) == EXPECTED_SOURCE_RAW_COLUMNS
 
 
 def test_extract_raises_on_missing_file():

@@ -6,17 +6,27 @@ from src.logger import get_logger
 logger = get_logger(__name__)
 
 # Set expected columns from data source
-EXPECTED_COLUMNS = {
+EXPECTED_SOURCE_RAW_COLUMNS = {
+    "VendorID",
     "tpep_pickup_datetime",
     "tpep_dropoff_datetime",
     "passenger_count",
     "trip_distance",
+    "RatecodeID",
+    "store_and_fwd_flag",
     "PULocationID",
     "DOLocationID",
-    "fare_amount",
-    "tip_amount",
-    "total_amount",
     "payment_type",
+    "fare_amount",
+    "extra",
+    "mta_tax",
+    "tip_amount",
+    "tolls_amount",
+    "improvement_surcharge",
+    "total_amount",
+    "congestion_surcharge",
+    "Airport_fee",
+    "cbd_congestion_fee"
 }
 
 
@@ -28,7 +38,7 @@ def extract(source_file: str) -> pd.DataFrame:
     Raises ExtractionError if the file is missing, unreadable,
     schema validation fails, or the file contains zero rows.
     """
-    \
+    
     data_dir = Path(__file__).parent.parent / "data"
     filepath = data_dir / source_file
 
@@ -48,22 +58,17 @@ def extract(source_file: str) -> pd.DataFrame:
 
     # Validate Schema
     actual_columns = set(df.columns)
-    missing_columns = EXPECTED_COLUMNS - actual_columns
-
+    missing_columns = EXPECTED_SOURCE_RAW_COLUMNS - actual_columns
     if missing_columns:
         raise ExtractionError(
             f"Schema validation failed. Missing columns {missing_columns}"
         )
-    
     logger.info("Schema validation passed")
 
     # Check empty file
     if len(df) == 0:
         raise ExtractionError("Source file contains zero rows")
     
-    # Select only the required columns for pipeline
-    df = df[list(EXPECTED_COLUMNS)]
-
     logger.info(f"Extraction complete: {len(df):,} rows returned")
 
     return df

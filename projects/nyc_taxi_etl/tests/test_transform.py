@@ -16,6 +16,15 @@ def test_zero_fare_is_dropped(valid_row):
     assert len(result) == 1
     assert (result["fare_amount"] > 0).all()
 
+def test_zero_total_amount_is_dropped(valid_row):
+    bad_row = {**valid_row, "total_amount": 0.0}
+    df = pd.DataFrame([valid_row, bad_row])
+    result = transform(df)
+
+    assert len(result) == 1
+    assert (result["total_amount"] > 0).all()
+
+
 def test_zero_distance_is_dropped(valid_row):
     bad_row = {**valid_row, "trip_distance": 0.0}
     df = pd.DataFrame([valid_row, bad_row])

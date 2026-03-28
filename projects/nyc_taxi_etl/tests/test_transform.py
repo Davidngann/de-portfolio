@@ -68,6 +68,10 @@ def test_columns_datatype_is_correct(valid_dataframe):
     assert result['passenger_count'].dtype == "Int8"
     assert result['payment_type'].dtype == "Int8"
 
+def test_transform_raises_on_missing_columns(valid_dataframe):
+    broken_df = valid_dataframe.drop(columns=["fare_amount"])
+    with pytest.raises(TransformationError, match="Missing columns"):
+        transform(broken_df)
 
 def test_row_is_dropped_when_required_columns_are_null(valid_row):
     bad_row = {**valid_row, **{col: pd.NA for col in DROP_IF_NULL}}

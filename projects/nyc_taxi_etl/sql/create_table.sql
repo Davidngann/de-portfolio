@@ -61,5 +61,5 @@ CREATE TABLE IF NOT EXISTS reporting.daily_metrics(
     min_trip_duration_minutes   NUMERIC(8,2) NOT NULL,
     max_trip_duration_minutes   NUMERIC(8,2) NOT NULL,
     avg_trip_duration_minutes   NUMERIC(8,2) NOT NULL,
-    loaded_at                   TIMESTAMPTZ DEFAULT NOW()
+    loaded_at                   TIMESTAMPTZ DEFAULT NOW() NOT NULL 
 );  

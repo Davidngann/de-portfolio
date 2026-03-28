@@ -47,9 +47,6 @@ COLUMNS_FOR_RAW = [
 ]
 
 
-
-
-
 # Establish connection to PSQL
 def _get_connection(config: dict):
     """

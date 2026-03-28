@@ -1,8 +1,9 @@
-# NYC taxi ETL Pipeline
+# NYC Taxi ELT/ETL Pipeline
 
-An ETL pipeline that extract NYC yellow taxi trips records, applies documented data quality rules, and load clean records to the PostgreSQL.
+An ELT/ETL pipeline that extracts NYC yellow taxi trip records, applies documented data quality rules, and loads clean records into a three-layer PostgreSQL schema for downstream analysis.
 
-Built as my week 3 deliverables of a 9-month data engineering study.
+Built across Weeks 3–5 of a 9-month data engineering self-study.
+Week 3: ETL pipeline · Week 4: test suite · Week 5: three-layer schema architecture.
 
 ---
 
@@ -12,30 +13,58 @@ The NYC Taxi and Limousine commision publishes [monthly trip records](https://ww
 ---
 
 ## Architecture
+Current PSQL Schema:
+![Three-layer PSQL schema architecture](<img/three-layer schema architecture.png>)
+
+| Layer | Table | Purpose |
+|---|---|---|
+| `raw` | `raw.yellow_trips` | Landing zone: all 20 source columns stored as TEXT, no cleaning |
+| `staging` | `staging.yellow_trips` | Typed, constrained, cleaned, and business rules applied |
+| `reporting` | `reporting.daily_metrics` | Aggregated daily metrics for downstream analysis |
+
+
+
+### Two Pipeline Paths
+ 
+The pipeline supports two execution paths selected via CLI flag.
+ 
+**ELT Path (default) — transformation happens inside PostgreSQL**
+ 
 ```
 yellow_tripdata_YYYY-MM.parquet
         │
         ▼
-    extract()
-    - Schema validation
-    - Column selection (selected 10 columns for downstream analysis)
+    extract()                ← schema validation against all 20 source columns
         │
         ▼
-    transform()
-    - Null handling
-    - Business rules filters
-    - Type casting
-    - trip_duration_minutes derivation
-    - Column rename to match destination schema
+    load()                   ← batch insert to raw.yellow_trips (all TEXT)
         │
         ▼
-    load()
-    - Batch insert with psycopg2.extras.execute_values()
-    - 5,000 rows per batch
-    - Per-batch transaction handling (rollback/commit)
+    raw_to_staging.sql       ← column selection, type casting, null handling,
+        │                      business rules, duration derivation (inside PSQL)
+        ▼
+    staging_to_reporting.sql ← daily aggregation with ON CONFLICT DO NOTHING
+```
+ 
+**ETL Path — transformation happens in Python**
+ 
+```
+yellow_tripdata_YYYY-MM.parquet
         │
         ▼
-staging.yellow_trips (PostgreSQL)
+    extract()                ← schema validation against all 20 source columns
+        │
+        ▼
+    transform()              ← column selection, null handling, business rules,
+        │                      type casting, duration derivation (pandas)
+        ▼
+    validate_dataframe()     ← Great Expectations suite (6 expectations)
+        │
+        ▼
+    load()                   ← batch insert to staging.yellow_trips
+        │
+        ▼
+    staging_to_reporting.sql ← daily aggregation with ON CONFLICT DO NOTHING
 ```
 
 ---
@@ -43,12 +72,15 @@ staging.yellow_trips (PostgreSQL)
 ## Tech stack
 | Tool | Purpose |
 |---|---|
-|Python 3.12 | Pipeline language|
+| Python | Pipeline language |
 | pandas | Extraction and transformation |
 | psycopg2 | PostgreSQL connection and batch insert |
-| python-dotenv | Environment variables management | 
-| pyarrow | Parquet file reading | 
-| PostgreSQL 17 | Destination database
+| pyarrow| Parquet file reading |
+| python-dotenv | Environment variable management |
+| Great Expectations | Data quality validation (ETL path) |
+| pytest | Unit and integration test suite |
+| PostgreSQL | Destination database |
+
 
 ---
 
@@ -56,225 +88,300 @@ staging.yellow_trips (PostgreSQL)
 ```
 nyc_taxi_etl/
 ├── src/
-|   ├── config.py       # Environment variables loader
-|   ├── exceptions.py   # Custom exceptions per pipeline stage
-|   ├── extract.py      # Extraction and schema validation
-|   ├── transform.py    # Cleaning, casting, and derivation
-|   ├── load.py         # Batch insert into PostgreSQL
-|   ├── logger.py       # Dual handler logger (console + log file)
+│   ├── config.py           # Environment variable loader with validation
+│   ├── exceptions.py       # Custom exceptions per pipeline stage
+│   ├── extract.py          # Parquet reading and schema validation
+│   ├── transform.py        # Cleaning, casting, and derivation (ETL path)
+│   ├── load.py             # Batch insert, SQL execution, connection management
+│   ├── validate.py         # Great Expectations suite
+│   └── logger.py           # Dual-handler logger (console + file)
 ├── sql/
-|   ├── create_table.sql    # Create destination schema and table
-├── data/                 # Source file folder - gitignored
-├── logs/                 # Pipeline logs - gitignored
-├── .env.example          # Required environment variables
-├── requirements.txt      # List of required libraries
-├── run.py                # Entry point
-└── README.MD
+│   ├── create_table.sql            # Three-layer schema DDL
+│   ├── raw_to_staging.sql          # ELT transformation inside PostgreSQL
+│   └── staging_to_reporting.sql    # Daily aggregation with upsert guard
+├── tests/
+│   ├── conftest.py         # Shared fixtures and test DB config
+│   ├── test_extract.py     # Extract stage tests
+│   ├── test_transform.py   # Transform stage tests
+│   └── test_load.py        # Load stage integration tests
+├── data/                   # Source files - gitignored
+├── logs/                   # Pipeline logs - gitignored
+├── .env.example            # Required environment variables
+├── requirements.txt        # Dependencies
+└── run.py                  # Entry point with argparse
 ```
 
 ---
 
 ## Setup
+ 
 ### 1. Clone the repo
+ 
 ```bash
 git clone https://github.com/Davidngann/de-portfolio.git
 cd de-portfolio/projects/nyc_taxi_etl
 ```
+ 
 ### 2. Create virtual environment
+ 
 ```bash
 python -m venv .venv
-.\.venv\Scripts\activate        # for windows
-source .venv/bin/activate       # for Mac/Linux
+.\.venv\Scripts\activate     # Windows
+source .venv/bin/activate    # Mac/Linux
 ```
-
+ 
 ### 3. Install dependencies
+ 
 ```bash
 pip install -r requirements.txt
 ```
-
+ 
 ### 4. Configure environment
+ 
 ```bash
 cp .env.example .env
-# Edit .env with your PostgreSQL credentials and source file name
+# Edit .env with your PostgreSQL credentials and source filename
 ```
-
-### 5. Download the source data
-Download Yellow Taxi trip records (Parquet format) from:
-https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page
-
-Place the file in the `data/` folder.
-
-### 6. Create the destination schema
+ 
+### 5. Download source data
+ 
+Download Yellow Taxi trip records (Parquet format) from the [TLC Trip Record Data page](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) and place the file in the `data/` folder.
+ 
+### 6. Create the destination schemas
+ 
+Create two databases — `taxi_db` (production) and `taxi_db_test` (tests) — then run:
+ 
 ```bash
-psql -U user_name -d taxi_db -f sql/create_table.sql
+psql -U {username} -d taxi_db -f sql/create_table.sql
+psql -U {username} -d taxi_db_test -f sql/create_table.sql
 ```
-
+ 
 ### 7. Run the pipeline
+ 
 ```bash
-python run.py
+# ELT path (default) — loads raw data to PostgreSQL, transforms via SQL
+python run.py --target-schema raw
+ 
+# ETL path — transforms via Python, loads directly to staging
+python run.py --target-schema staging
 ```
+
 ---
 
 ## Data quality rules
-### Columns selected (10 of 20)
-- `tpep_pickup_datetime`
-- `tpep_dropoff_datetime`
-- `passenger_count`
-- `trip_distance`
-- `PULocationID`
-- `DOLocationID`
-- `fare_amount` 
-- `tip_amount`
-- `total_amount`
-- `payment_type`
+### Column selection (10 of 20 used in staging)
+ 
+| Column | Kept | Reason |
+|---|---|---|
+| `tpep_pickup_datetime` | ✓ | Required for duration derivation |
+| `tpep_dropoff_datetime` | ✓ | Required for duration derivation |
+| `passenger_count` | ✓ | Operational metric |
+| `trip_distance` | ✓ | Core business metric |
+| `PULocationID` | ✓ | Required for zone analysis |
+| `DOLocationID` | ✓ | Required for zone analysis |
+| `fare_amount` | ✓ | Core financial metric |
+| `tip_amount` | ✓ | Financial metric |
+| `total_amount` | ✓ | Core financial metric |
+| `payment_type` | ✓ | Operational metric |
+The remaining 10 columns are preserved in `raw.yellow_trips` for auditability.
+
 
 ### Null handling
 | Column | Rule | Reason |
 |---|---|---|
-| pickup_at, dropoff_at | DROP | Duration cannot be derived without both |
-| trip_distance | DROP | Core business metric |
-| fare_amount | DROP | Core business metric |
-| total_amount | DROP | Core business metric |
-| pickup_zone_id | DROP | Not nullable in destination schema |
-| dropoff_zone_id | DROP | Not nullable in destination schema |
-| passenger_count | KEEP | Self-reported, often missing, but still usable |
-| tip_amount | KEEP | Missing tip means $0 tip in many cases |
-| payment_type | KEEP | Useful row overall without payment method |
+| `pickup_at`, `dropoff_at` | DROP | Duration cannot be derived without both |
+| `trip_distance` | DROP | Core business metric |
+| `fare_amount` | DROP | Core business metric |
+| `total_amount` | DROP | Core business metric |
+| `pickup_zone_id` | DROP | NOT NULL in destination schema |
+| `dropoff_zone_id` | DROP | NOT NULL in destination schema |
+| `passenger_count` | KEEP | Self-reported, often missing, still usable |
+| `tip_amount` | KEEP | Missing tip treated as $0 |
+| `payment_type` | KEEP | Row is usable without payment method |
+
 
 
 ### Business rules filter
 | Rule | Reason |
 |---|---|
-| trip_distance > 0 | Zero-distance trips are not real trips |
-| fare_amount > 0 | Zero-fare trips are not valid records |
-| trip_duration_minutes > 0 | Negative duration = timestamp error |
-| trip_duration_minutes ≤ 1440 | Trips over 24 hours treated as corrupt data |
+| `trip_distance > 0` | Zero-distance trips are not real trips |
+| `fare_amount > 0` | Zero-fare trips are not valid records |
+| `total_amount > 0` | Zero total amount trips are not valid records |
+| `trip_duration_minutes > 0` | Negative duration indicates a timestamp error |
+| `trip_duration_minutes ≤ 1440` | Trips over 24 hours treated as corrupt data |
 
 ---
-## Sample result
-The dataset used is: `yellow_tripdata_2025-04.parquet`
-| Stage | Remaining rows |
+## Sample Results
+ 
+Dataset: `yellow_tripdata_2025-04.parquet`
+ 
+**ELT Path**
+ 
+| Stage | Rows |
 |---|---|
-| Raw (extracted) | 3,970,553 |
-| Null handling | 3,970,553 | 
-| After business rule filters | 3,706,107 |
-| After duration < 0 filter | 3,672,189 |
-| After duration >= 1440 filter | 3,672,168 |
-| Loaded to PostgreSQL | 3,672,168 |
-| Total dropped | 298,385 (7.5%) |
-
-Load time: ~6 minutes 26 seconds
-Batch size: 5,000 rows
-Total batches: 735
+| Extracted → `raw.yellow_trips` | 3,970,553 |
+| `raw_to_staging.sql` → `staging.yellow_trips` | 3,672,139 |
+| `staging_to_reporting.sql` → `reporting.daily_metrics` | 32 |
+ 
+Load time: ~15 min 58 sec · Batch size: 5,000 · Total batches: 795
 
 <details>
-<summary> Logging in console view example </summary>
+<summary> ELT log result snippet </summary>
 
 ```
-2026-03-13 21:49:44,256 | INFO | __main__ | Pipeline starting | ENV: DEVELOPMENT
-2026-03-13 21:49:44,257 | INFO | src.extract | Starting extraction from <location>\projects\nyc_taxi_etl\data\yellow_tripdata_2025-04.parquet
-2026-03-13 21:49:46,574 | INFO | src.extract | Raw file loaded: 3,970,553, rows, 20 columns
-2026-03-13 21:49:46,579 | INFO | src.extract | Schema validation passed
-2026-03-13 21:49:46,790 | INFO | src.extract | Extraction complete: 3,970,553 rows returned
-2026-03-13 21:49:46,791 | INFO | src.transform | Starting transformation: 3,970,553, rows received
-2026-03-13 21:49:46,964 | INFO | src.transform | Null drop complete: 0 rows removed, 3,970,553 remaining | dropped percentage: 0.0%
-2026-03-13 21:49:47,827 | INFO | src.transform | Business rule filter complete: 264,446 rows removed, 3,706,107 remaining | dropped percentage: 7.1%
-2026-03-13 21:49:48,022 | INFO | src.transform | Type casting complete
-2026-03-13 21:49:48,704 | INFO | src.transform | Duration filter complete: 33,918 rows removed, 3,672,189 remaining | dropped percentage: 0.9%
-2026-03-13 21:49:49,184 | INFO | src.transform | Max duration filter complete: 21 rows removed, 3,672,168 remaining | dropped percentage: 0.0%
-2026-03-13 21:49:49,186 | INFO | src.transform | Transformation complete: 3,672,168 rows ready for load | total dropped: 298,385  | % dropped from initial: 7.5%
-2026-03-13 21:49:49,187 | INFO | src.load | Starting load with: 3,672,168 rows | Batch size: 5,000 | Total batches: 735
-2026-03-13 21:50:49,434 | INFO | src.load |  Batch 1/735 | Rows loaded: 5,000/3,672,168
-2026-03-13 21:50:49,924 | INFO | src.load |  Batch 2/735 | Rows loaded: 10,000/3,672,168
-2026-03-13 21:50:50,363 | INFO | src.load |  Batch 3/735 | Rows loaded: 15,000/3,672,168
+2026-03-28 17:03:38,295 | INFO | __main__ | Pipeline starting | ENV: DEVELOPMENT | Target Schema: raw
+2026-03-28 17:03:38,296 | INFO | src.extract | Starting extraction from <location>\de-portfolio\projects\nyc_taxi_etl\data\yellow_tripdata_2025-04.parquet
+2026-03-28 17:03:40,908 | INFO | src.extract | Raw file loaded: 3,970,553, rows, 20 columns
+2026-03-28 17:03:40,911 | INFO | src.extract | Schema validation passed
+2026-03-28 17:03:40,911 | INFO | src.extract | Extraction complete: 3,970,553 rows returned
+2026-03-28 17:06:03,132 | INFO | src.load | [raw] starting load: 3,970,553 rows | Batch size: 5,000 | Total batches: 795
+2026-03-28 17:06:04,595 | INFO | src.load | Batch for raw: 1/795 | Rows loaded: 5,000/3,970,553
+2026-03-28 17:06:05,517 | INFO | src.load | Batch for raw: 2/795 | Rows loaded: 10,000/3,970,553
 ...
 ...
-2026-03-13 21:56:59,650 | INFO | src.load |  Batch 734/735 | Rows loaded: 3,670,000/3,672,168
-2026-03-13 21:56:59,877 | INFO | src.load |  Batch 735/735 | Rows loaded: 3,672,168/3,672,168
-2026-03-13 21:56:59,878 | INFO | src.load | Database connection closed
-2026-03-13 21:56:59,878 | INFO | src.load | Load complete | 3,672,168 rows inserted across 735 batches
-2026-03-13 21:57:01,391 | INFO | __main__ | Pipeline complete
+2026-03-28 17:18:57,730 | INFO | src.load | Load complete | 3,970,553 rows inserted across 795 batches
+2026-03-28 17:18:57,731 | INFO | src.load | Database connection closed
+2026-03-28 17:19:00,529 | INFO | src.load | Starting SQL script: sql/raw_to_staging.sql
+2026-03-28 17:21:51,186 | INFO | src.load | SQL script executed: sql/raw_to_staging.sql | PSQL Status: INSERT 0 3672139 | Rows affected: 3,672,139
+2026-03-28 17:21:51,186 | INFO | src.load | Successfully executed sql script: sql/raw_to_staging.sql
+2026-03-28 17:21:51,190 | INFO | src.load | Database connection closed
+2026-03-28 17:21:51,305 | INFO | src.load | Starting SQL script: sql/staging_to_reporting.sql
+2026-03-28 17:22:01,291 | INFO | src.load | SQL script executed: sql/staging_to_reporting.sql | PSQL Status: INSERT 0 32 | Rows affected: 32
+2026-03-28 17:22:01,292 | INFO | src.load | Successfully executed sql script: sql/staging_to_reporting.sql
+2026-03-28 17:22:01,294 | INFO | src.load | Database connection closed
+2026-03-28 17:22:01,295 | INFO | __main__ | Pipeline complete
+
 ```
 
 </details>
 
 ---
 
-## Known Limitations
-**Full file load only** -> The pipeline loads the entire source file on every run rather than loading incrementally.
+**ETL Path**
+ 
+| Stage | Rows |
+|---|---|
+| Extracted | 3,970,553 |
+| After null handling | 3,970,553 |
+| After business rule filters | 3,706,063 |
+| After duration filters | 3,672,139 |
+| Loaded → `staging.yellow_trips` | 3,672,139 |
+| Aggregated → `reporting.daily_metrics` | 32 |
+| Total dropped | 298,414 (7.5%) |
+ 
+Load time: ~7 min 46 sec · Batch size: 5,000 · Total batches: 735
 
-**No automated tests** -> Will be added within the next 1-2 weeks.
+<details>
+<summary> ETL log result snippet </summary>
 
-**No Idempotency** -> Re-running the pipeline inserts duplicate rows because `trip_id` is a `BIGSERIAL` with no natural key constraint.
-Fix planned in the next few weeks with airflow and `ON CONFLICT DO NOTHING`.
+```
+2026-03-28 17:26:00,233 | INFO | __main__ | Pipeline starting | ENV: DEVELOPMENT | Target Schema: staging
+2026-03-28 17:26:00,233 | INFO | src.extract | Starting extraction from <location>\de-portfolio\projects\nyc_taxi_etl\data\yellow_tripdata_2025-04.parquet
+2026-03-28 17:26:01,023 | INFO | src.extract | Raw file loaded: 3,970,553, rows, 20 columns
+2026-03-28 17:26:01,024 | INFO | src.extract | Schema validation passed
+2026-03-28 17:26:01,025 | INFO | src.extract | Extraction complete: 3,970,553 rows returned
+2026-03-28 17:26:01,025 | INFO | src.transform | Starting transformation: 3,970,553, rows received
+2026-03-28 17:26:01,027 | INFO | src.transform | Schema validation for transformation passed
+2026-03-28 17:26:01,429 | INFO | src.transform | Null drop complete: 0 rows removed, 3,970,553 remaining | dropped percentage: 0.0%
+2026-03-28 17:26:02,524 | INFO | src.transform | Business rule filter complete: 264,490 rows removed, 3,706,063 remaining | dropped percentage: 6.7% 
+2026-03-28 17:26:02,693 | INFO | src.transform | Type casting complete
+2026-03-28 17:26:03,301 | INFO | src.transform | Duration filter complete: 33,924 rows removed, 3,672,139 remaining | dropped percentage: 0.9% 
+2026-03-28 17:26:03,304 | INFO | src.transform | Transformation complete: 3,672,139 rows ready for load | total dropped: 298,414  | % dropped from initial: 7.5%
+2026-03-28 17:26:05,563 | INFO | src.validate | GE validation passed at transform stage | 6 expectations checked
+2026-03-28 17:27:29,761 | INFO | src.load | [staging] starting load: 3,672,139 rows | Batch size: 5,000 | Total batches: 735
+2026-03-28 17:27:30,247 | INFO | src.load | Batch for staging: 1/735 | Rows loaded: 5,000/3,672,139
+2026-03-28 17:27:30,679 | INFO | src.load | Batch for staging: 2/735 | Rows loaded: 10,000/3,672,139
+...
+...
+2026-03-28 17:33:46,518 | INFO | src.load | Batch for staging: 735/735 | Rows loaded: 3,672,139/3,672,139
+2026-03-28 17:33:46,518 | INFO | src.load | Load complete | 3,672,139 rows inserted across 735 batches
+2026-03-28 17:33:46,519 | INFO | src.load | Database connection closed
+2026-03-28 17:33:48,059 | INFO | src.load | Starting SQL script: sql/staging_to_reporting.sql
+2026-03-28 17:33:53,056 | INFO | src.load | SQL script executed: sql/staging_to_reporting.sql | PSQL Status: INSERT 0 32 | Rows affected: 32
+2026-03-28 17:33:53,056 | INFO | src.load | Successfully executed sql script: sql/staging_to_reporting.sql
+2026-03-28 17:33:53,059 | INFO | src.load | Database connection closed
+2026-03-28 17:33:53,059 | INFO | __main__ | Pipeline complete
+```
 
-**Single file only:** The pipeline processes one file specified in `SOURCE_FILE`.
-Multiple files in `data/` are not detected or processed automatically.
-Fix planned in the next few weeks with airflow.
+</details>
 
 ---
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| DB_HOST | Yes | — | PostgreSQL host |
-| DB_PORT | No | 5432 | PostgreSQL port |
-| DB_NAME | Yes | — | Database name |
-| DB_USER | Yes | — | Database user |
-| DB_PASSWORD | Yes | — | Database password |
-| SOURCE_FILE | Yes | — | Parquet filename in data/ |
-| BATCH_SIZE | No | 5000 | Rows per insert batch |
 
-
----
----
 ## Testing
 ### Test Suite overview
 | File | Tests | What it covers |
 |---|---|---|
-| `tests/test_extract.py` | 4 | Schema validation, missing file, missing expected columns, empty file |
-| `tests/test_transform.py` | 12 | Business rule, null handling, type casting, column rename, row counts, duration rules |
-| `tests/test_load.py` | 5 | Row counts, bad connection config, batch size variations (parametrized) |
+| `test_extract.py` | 5 | Schema validation, missing file, unreadable file, missing columns, empty file |
+| `test_transform.py` | 14 | Column selection, business rules, null handling, type casting, column rename, duration filters, row counts |
+| `test_load.py` | 7 | Row counts to raw and staging, bad connection config, batch size variations, invalid schema |
 
-### How to run the test
-**Run the full suite from the project root:**
+### Running tests
+ 
 ```bash
+# Full suite
 pytest
-```
-
-**Run with verbose output:**
-```bash
+ 
+# Verbose output
 pytest -v
-```
-
-**Run a single test file:**
-```bash
-pytest projects/nyc_taxi_etl/tests/test_transform.py -v
-```
-
-**Run with coverage report:**
-```bash
+ 
+# Single file
+pytest tests/test_transform.py -v
+ 
+# With coverage report
 pytest --cov=src --cov-report=term-missing
 ```
 
 ### Coverage
+ 
 | File | Coverage | Notes |
 |---|---|---|
-| `extract.py` | 100% | - |
-| `transform.py` | 96% | Generic unexpected exception handler not covered | 
-| `load.py` | 92% | Per-batch failure path not tested |
+| `extract.py` | 100% | — |
+| `transform.py` | 97% | Generic `except Exception` handler not reachable in tests |
+| `load.py` | 74% | Batch failure path and SQL error paths not tested |
 | `validate.py` | 0% | GE runs via `run.py`, not called in test suite |
-| `config.py` | 0% | Verified via pipeline run, not unit tests |
+| `config.py` | 0% | Verified via pipeline run |
+ 
+**Overall: 72%**
 
-Overall Coverage: 77%
 
 ### Great Expectations
-6 data quality expectations run automatically after `transform()` and before `load()` as part of `python run.py`:
-- `fare_amount` -> No nulls, must be above 0
-- `trip_distance` -> No nulls, must be above 0
-- `pickup_zone_id` -> No nulls
-- `trip_duration_minutes` -> Must be `>0` and `<=1440` minutes 
+6 expectations run automatically after `transform()` before `load()`:
+ 
+| Column | Expectation |
+|---|---|
+| `fare_amount` | Not null, must be > 0 |
+| `trip_distance` | Not null, must be > 0 |
+| `pickup_zone_id` | Not null |
+| `trip_duration_minutes` | Must be > 0 and ≤ 1440 |
+ 
+Pipeline raises `TransformationError` and halts if any expectation fails.
 
-Pipeline raises `TransformationError` nd stops if any expectation fails.
+### Known coverage gaps
+ 
+- `validate.py` — no pytest coverage. Verified manually by injecting a bad row and confirming `TransformationError` is raised.
+- `load.py` — SQL script execution error paths verified manually in PgAdmin.
+- `load.py` — per-batch failure path not tested.
+- Great Expectations applies to ETL path only.
 
-# Known coverage gaps
-- `validate.py` -> no pytest coverage. Still verified manually by injecting a bad row and confirming `TransformationError` is raised correctly
-- Batch failure path in `load.py` is not tested yet.
+
+## Known Limitations
+**No raw layer idempotency** — Re-running the pipeline on the same source file appends duplicate rows to `raw.yellow_trips`. There is no deduplication at the raw layer. Staging row counts will exceed raw counts on repeated runs. Fix planned with few weeks.
+ 
+**Two transformation paths require manual sync** — Business rule changes must be applied to both `transform.py` and `raw_to_staging.sql` independently. No automated test verifies parity between the two paths.
+ 
+**Full file load only** — The pipeline loads the entire source file on every run. Incremental loading is not implemented.
+ 
+**Single file only** — The pipeline processes one file specified in `SOURCE_FILE`. Multiple files are not detected or processed automatically.
+
+---
+## Environment Variables
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `DB_HOST` | Yes | — | PostgreSQL host |
+| `DB_PORT` | No | `5432` | PostgreSQL port |
+| `DB_NAME` | Yes | — | Production database name |
+| `TEST_DB_NAME` | Yes | — | Test database name |
+| `DB_USER` | Yes | — | Database user |
+| `DB_PASSWORD` | Yes | — | Database password |
+| `SOURCE_FILE` | Yes | — | Parquet filename in `data/` |
+| `BATCH_SIZE` | No | `5000` | Rows per insert batch |

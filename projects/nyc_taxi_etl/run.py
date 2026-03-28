@@ -32,11 +32,12 @@ def main():
         _execute_sql_file('sql/raw_to_staging.sql', config)
         _execute_sql_file('sql/staging_to_reporting.sql', config)
 
-    if target_schema == "staging":
+    elif target_schema == "staging":
         df_clean = transform(df_raw)
         # Validate transform, before loading
         validate_dataframe(df_clean, stage="transform")
         load(df_clean, config, target_schema)
+        _execute_sql_file('sql/staging_to_reporting.sql', config)
 
     logger.info("Pipeline complete")
 

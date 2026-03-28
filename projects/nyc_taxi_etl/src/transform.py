@@ -137,6 +137,8 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
     
         return df
 
+    except TransformationError as e:
+        raise
     except Exception as e:
         raise TransformationError(f"Unexpected error during transformation: {e}")
     

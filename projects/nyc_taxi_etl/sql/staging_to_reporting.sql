@@ -13,7 +13,7 @@ INSERT INTO reporting.daily_metrics (
     avg_trip_duration_minutes
 )
 SELECT 
-    DATE(pickup_at),
+    DATE(pickup_at AT TIME ZONE 'America/New_York'),
     COUNT(*),
     SUM(total_amount),
     MIN(trip_distance),
@@ -26,5 +26,5 @@ SELECT
     MAX(trip_duration_minutes),
     AVG(trip_duration_minutes)
 FROM staging.yellow_trips
-GROUP BY DATE(pickup_at)
+GROUP BY DATE(pickup_at AT TIME ZONE 'America/New_York')
 ON CONFLICT(metric_date) DO NOTHING;

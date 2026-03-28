@@ -1,7 +1,8 @@
 import pandas as pd
-import pytest
+import pytest 
+from unittest.mock import MagicMock, mock_open, patch
 import psycopg2
-from src.load import load
+from src.load import load, _execute_sql_file
 from src.exceptions import LoadError
 
 def test_load_inserts_correct_row_count_to_raw_schema(db_connection, test_db_config, valid_row):
@@ -53,3 +54,8 @@ def test_load_correct_count_across_batch_sizes_to_staging(db_connection, test_db
         count = cur.fetchone()[0]
 
     assert count == 5
+
+
+def test_load_raises_on_invalid_schema(test_db_config, valid_dataframe):
+    with pytest.raises(LoadError, match="faulty"):
+        load(valid_dataframe, test_db_config, "invalid_schema")

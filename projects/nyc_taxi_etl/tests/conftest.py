@@ -48,23 +48,23 @@ def valid_dataframe(valid_row) -> pd.DataFrame:
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
 @pytest.fixture
-def valid_transformed_row(valid_row) -> dict:
+def valid_transformed_row() -> dict:
     """
-    A single row built from valid_row.
-    Then, transformed following src.transform() rules for Load test purposes. 
+    A single row matching staging.yellow_trips schema exactly.
     """
-    updates={
-        "tpep_pickup_datetime":  "pickup_at",
-        "tpep_dropoff_datetime": "dropoff_at",
-        "PULocationID":          "pickup_zone_id",
-        "DOLocationID":          "dropoff_zone_id",
+    return {
+        "pickup_at":              pd.Timestamp("2025-04-01 08:00:00"),
+        "dropoff_at":             pd.Timestamp("2025-04-01 08:30:00"),
+        "passenger_count":        pd.NA,
+        "trip_distance":          3.5,
+        "pickup_zone_id":         100,
+        "dropoff_zone_id":        200,
+        "fare_amount":            15.0,
+        "tip_amount":             3.0,
+        "total_amount":           24.0,
+        "payment_type":           pd.NA,
+        "trip_duration_minutes":  30.0,
     }
-    renamed_valid_row = {updates.get(k,k): v for k, v in valid_row.items()}
-
-    renamed_valid_row["trip_duration_minutes"] = 30.0
-    renamed_valid_row["passenger_count"]=pd.NA
-
-    return renamed_valid_row
 
 
 @pytest.fixture

@@ -1,0 +1,54 @@
+# Virtual environment
+.venv/
+
+# Environment variables - NEVER commit these
+.env
+
+# Logs
+*.log
+logs/*.log
+!logs/.gitkeep
+
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Data files - never commit raw data
+*.csv
+*.json
+*.parquet
+*.xlsx
+
+
+# Pytest cache
+.pytest_cache/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Scratch
+test_personal
+learning_tracking.md
+DE_Roadmap_2026.md
+scratch_run.py
+
+# Terraform
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# Pytest
+.coverage
+htmlcov/

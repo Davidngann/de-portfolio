@@ -1,0 +1,34 @@
+services:
+  dbx:
+    image: postgres:17.9-alpine3.22
+    environment:
+      POSTGRES_DB: taxi_db
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/create_table.sql:/docker-entrypoint-initdb.d/create_table.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d taxi_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  etl:
+    build: .
+    env_file:
+      - .env
+    environment:
+      DB_HOST: dbx
+      DB_PORT: 5432
+    depends_on:
+      dbx:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+
+volumes:
+  postgres_data:

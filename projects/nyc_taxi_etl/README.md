@@ -408,6 +408,10 @@ Pipeline raises `TransformationError` and halts if any expectation fails.
  
 **Single file only** — The pipeline processes one file specified in `SOURCE_FILE`. Multiple files are not detected or processed automatically.
 
+**Source data contains boundary dates from adjacent months**: The TLC parquet files for a given month include trips whose pickup timestamps fall outside that month. For example, `yellow_tripdata_2025-04.parquet` contains trips recorded on 2025-03-31 and 2025-05-01. As a result, `reporting.daily_metrics` will contain rows for dates outside the nominal month range. 
+If `yellow_tripdata_2025-03.parquet` and `yellow_tripdata_2025-04.parquet` are both loaded into the same database, both files will contribute trips for 2025-03-31. The ON CONFLICT DO NOTHING guard on reporting.daily_metrics means whichever month runs first wins. The second run's data for that boundary date is silently discarded. The same applies to the last day of each month. This matter will be handled properly within few weeks.
+
+
 ---
 ## Environment Variables
 | Variable | Required | Default | Description |

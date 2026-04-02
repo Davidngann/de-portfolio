@@ -86,8 +86,8 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
         logger.info(f"Business rule filter complete: {len_dropped_business:,} rows removed, {len_after_dropped_business:,} remaining | dropped percentage: {pct_dropped_business:.1f}% ")
         
         # Cast type explicitly
-        df['tpep_pickup_datetime'] = pd.to_datetime(df['tpep_pickup_datetime'])
-        df['tpep_dropoff_datetime'] = pd.to_datetime(df['tpep_dropoff_datetime'])
+        df['tpep_pickup_datetime'] = pd.to_datetime(df['tpep_pickup_datetime']).dt.tz_localize('America/New_York')
+        df['tpep_dropoff_datetime'] = pd.to_datetime(df['tpep_dropoff_datetime']).dt.tz_localize('America/New_York')
         df['trip_distance'] = df['trip_distance'].astype("float64")
         df['fare_amount'] = df['fare_amount'].astype("float64")
         df['tip_amount'] = df['tip_amount'].astype("Float64")

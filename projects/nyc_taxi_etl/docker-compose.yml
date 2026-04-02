@@ -18,7 +18,7 @@ services:
 
   etl:
     # build: .
-    image: davidngan/nyc-taxi-etl:v1.1
+    image: davidngan/nyc-taxi-etl:v1.2
     env_file:
       - .env
     environment:

@@ -163,11 +163,16 @@ def load(df: pd.DataFrame, config:dict, target_schema: str)-> None:
 
     insert_sql = _build_insert_sql(target_schema, "yellow_trips", INSERT_COLUMNS)
 
-    logger.info(f"Preparing {len(df):,} rows, ensuring compatibility for insert into {target_schema}...")
-    records = [
-        tuple(_to_python_scalar(v) for v in row)
-        for row in df[INSERT_COLUMNS].itertuples(index=False, name=None)
-    ]
+    total_rows = len(df)
+    records = []
+
+    logger.info(f"Preparing {total_rows:,} rows, ensuring compatibility for insert into {target_schema}...")
+
+    for i, row in enumerate(df[INSERT_COLUMNS].itertuples(index=False, name=None)):
+        records.append(tuple(_to_python_scalar(v) for v in row))
+        if (i + 1 ) % 500_000 == 0:
+            logger.info(f"Scalar conversion: {i + 1:,}/{total_rows:,} rows converted")
+
     logger.info(f"Row preparation complete: {len(records):,} records ready")
 
     conn = _get_connection(config)

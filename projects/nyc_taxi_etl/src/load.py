@@ -162,10 +162,13 @@ def load(df: pd.DataFrame, config:dict, target_schema: str)-> None:
         raise LoadError(f"{target_schema} schema is faulty, input the valid target schema ['raw'] or ['staging']")
 
     insert_sql = _build_insert_sql(target_schema, "yellow_trips", INSERT_COLUMNS)
+
+    logger.info(f"Preparing {len(df):,} rows, ensuring compatibility for insert into {target_schema}...")
     records = [
         tuple(_to_python_scalar(v) for v in row)
         for row in df[INSERT_COLUMNS].itertuples(index=False, name=None)
     ]
+    logger.info(f"Row preparation complete: {len(records):,} records ready")
 
     conn = _get_connection(config)
 

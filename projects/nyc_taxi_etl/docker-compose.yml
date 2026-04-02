@@ -16,8 +16,9 @@ services:
       timeout: 5s
       retries: 5
 
-  etl:
-    build: .
+  elt:
+    # build: .
+    image: davidngan/nyc-taxi-etl:v1.1
     env_file:
       - .env
     environment:

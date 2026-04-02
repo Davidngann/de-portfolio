@@ -114,7 +114,42 @@ nyc_taxi_etl/
 ---
 
 ## Setup
- 
+### OPTION 1 - Docker (RECOMMENDED)
+Requires Docker Desktop installed and running.
+
+### 1. Clone the repo and navigate to project folder
+```bash
+git clone https://github.com/Davidngann/de-portfolio.git
+cd de-portfolio/projects/nyc_taxi_etl
+```
+
+### 2. Copy `.env.example` to `.env` and fill in your credentials
+```bash
+cp .env.example .env
+# Edit .env with your preferred PostgreSQL credentials and source filename
+```
+
+### 3. Place your source parquet file in `data/`
+Download Yellow Taxi trip records (Parquet format) from the [TLC Trip Record Data page](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) and place the file in the `data/` folder.
+
+### 4. Run the pipeline:
+
+```bash
+docker-compose up
+```
+
+The stack starts PostgreSQL, creates the schema automatically,
+and runs the ETL pipeline. Logs are written to `logs/pipeline.log`.
+
+To run the ETL path instead of the default ELT path:
+```bash
+docker-compose run --rm etl python run.py --target-schema staging
+```
+
+**Docker Hub image:** `davidngan/nyc-taxi-etl:v1.1`
+
+---
+### OPTION 2 - Local Setup (MANUAL)
 ### 1. Clone the repo
  
 ```bash

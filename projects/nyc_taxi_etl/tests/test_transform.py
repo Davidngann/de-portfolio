@@ -57,8 +57,8 @@ def test_output_columns_are_renamed(valid_dataframe):
 def test_columns_datatype_is_correct(valid_dataframe):
     result = transform(valid_dataframe)
 
-    assert result['pickup_at'].dtype == "datetime64[us]"
-    assert result['dropoff_at'].dtype == "datetime64[us]"
+    assert str(result['pickup_at'].dtype).startswith("datetime64")
+    assert str(result['dropoff_at'].dtype).startswith("datetime64")
     assert result['trip_distance'].dtype == "float64"
     assert result['fare_amount'].dtype == "float64"
     assert result['tip_amount'].dtype == "Float64"

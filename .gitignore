@@ -28,7 +28,7 @@ Thumbs.db
 *.json
 *.parquet
 *.xlsx
-data
+
 
 # Pytest cache
 .pytest_cache/

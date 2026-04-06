@@ -9,7 +9,8 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./sql/create_table.sql:/docker-entrypoint-initdb.d/create_table.sql
+      - ./sql/01_create_tables.sql:/docker-entrypoint-initdb.d/create_tables.sql
+      - ./sql/02_create_test_db.sql:/docker-entrypoint-initdb.d/02_create_test_db.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d taxi_db"]
       interval: 5s
@@ -18,7 +19,7 @@ services:
 
   etl:
     # build: .
-    image: davidngan/nyc-taxi-etl:v1.2
+    image: davidngan/nyc-taxi-etl:v1.3
     env_file:
       - .env
     environment:

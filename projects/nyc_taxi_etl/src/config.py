@@ -29,4 +29,3 @@ def get_config() -> dict:
 
 if __name__ == "__main__":
     config = get_config()
-    print(config)

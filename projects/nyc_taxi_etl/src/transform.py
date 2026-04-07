@@ -59,9 +59,9 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
         actual_columns = set(df.columns)
         missing_columns = EXPECTED_COLUMNS - actual_columns
         if missing_columns:
-            raise TransformationError(
-                f"Schema validation for transformation failed. Missing columns {missing_columns}"
-            )
+            msg = f"Schema validation for transformation failed. Missing columns {missing_columns}"
+            logger.error(msg)
+            raise TransformationError(msg)
         logger.info("Schema validation for transformation passed")
 
         df = df[list(EXPECTED_COLUMNS)].copy()
@@ -125,11 +125,11 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
         })
 
 
-        # --- Step 6: Final empty check ---
+        # --- Final empty check ---
         if len(df) == 0:
-            raise TransformationError(
-                "Transformation produced zero rows - all rows where dropped during cleaning"
-            )
+            msg = "Transformation produced zero rows - all rows where dropped during cleaning"
+            logger.error(msg)
+            raise TransformationError(msg)
         
         total_dropped = len_initial - len(df)
         pct_total_dropped = (total_dropped/len_initial*100) if len_initial else 0
@@ -140,5 +140,7 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
     except TransformationError as e:
         raise
     except Exception as e:
-        raise TransformationError(f"Unexpected error during transformation: {e}")
+        msg = f"Unexpected error during transformation: {e}"
+        logger.error(msg)
+        raise TransformationError(msg)
     

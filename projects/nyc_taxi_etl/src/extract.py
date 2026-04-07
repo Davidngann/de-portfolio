@@ -46,13 +46,17 @@ def extract(source_file: str) -> pd.DataFrame:
 
     # Check file existence
     if not filepath.exists():
-        raise ExtractionError(f"Source file not found: {filepath}")
+        msg = f"Source file not found: {filepath}"
+        logger.error(msg)
+        raise ExtractionError(msg)
     
     # Read file
     try:
         df = pd.read_parquet(filepath)
     except Exception as e:
-        raise ExtractionError(f"Failed to read Parquet file: {e}")
+        msg = f"Failed to read Parquet file: {e}"
+        logger.error(msg)
+        raise ExtractionError(msg)
     
     logger.info(f"Raw file loaded: {len(df):,}, rows, {len(df.columns)} columns")
 
@@ -60,14 +64,16 @@ def extract(source_file: str) -> pd.DataFrame:
     actual_columns = set(df.columns)
     missing_columns = EXPECTED_SOURCE_RAW_COLUMNS - actual_columns
     if missing_columns:
-        raise ExtractionError(
-            f"Schema validation failed. Missing columns {missing_columns}"
-        )
+        msg =  f"Schema validation failed. Missing columns {missing_columns}"
+        logger.error(msg)
+        raise ExtractionError(msg)
     logger.info("Schema validation passed")
 
     # Check empty file
     if len(df) == 0:
-        raise ExtractionError("Source file contains zero rows")
+        msg = "Source file contains zero rows"
+        logger.error(msg)
+        raise ExtractionError(msg)
     
     logger.info(f"Extraction complete: {len(df):,} rows returned")
 

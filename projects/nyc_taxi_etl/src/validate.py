@@ -52,8 +52,8 @@ def validate_dataframe(df: pd.DataFrame, stage: str = "transform") -> None:
     )
 
     # Run validator
+    logger.info(f"GE validation is starting with {len(suite.expectations)} expectations")
     results = validation_definition.run(batch_parameters = {"dataframe": df})
-    # print(results)
     
     if not results["success"]:
         failed = [

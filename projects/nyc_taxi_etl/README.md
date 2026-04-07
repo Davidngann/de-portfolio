@@ -1,9 +1,8 @@
 # NYC Taxi ELT/ETL Pipeline
 
-An ELT/ETL pipeline that extracts NYC yellow taxi trip records, applies documented data quality rules, and loads clean records into a three-layer PostgreSQL schema for downstream analysis.
+An end-to-end ELT/ETL pipeline processing NYC yellow taxi trip records through a three-layer PostgreSQL schema (raw → staging → reporting). Supports both Python-based transformation (ETL) and database-native transformation (ELT) via a CLI flag.
 
-Built across Weeks 3–5 of a 9-month data engineering self-study.
-Week 3: ETL pipeline · Week 4: test suite · Week 5: three-layer schema architecture.
+Built as part of a 9-month data engineering curriculum.
 
 ---
 
@@ -118,9 +117,24 @@ nyc_taxi_etl/
 Requires Docker Desktop installed and running.
 
 ### 1. Clone the repo and navigate to project folder
+**If you want to run without cloning the repo**, pull the pre-built image:
+```bash
+docker pull davidngan/nyc-taxi-etl
+```
+Then in `docker-compose.yml`, swap:
+```yaml
+# Comment this out:
+# build: .
+
+# Uncomment this:
+image: davidngan/nyc-taxi-etl:latest
+```
+
+**If you want to build from source**, clone and run normally:
 ```bash
 git clone https://github.com/Davidngann/de-portfolio.git
 cd de-portfolio/projects/nyc_taxi_etl
+make docker-up
 ```
 
 ### 2. Copy `.env.example` to `.env` and fill in your credentials
@@ -135,7 +149,7 @@ Download Yellow Taxi trip records (Parquet format) from the [TLC Trip Record Dat
 ### 4. Run the pipeline:
 
 ```bash
-docker-compose up
+make run
 ```
 
 The stack starts PostgreSQL, creates the schema automatically,
@@ -143,10 +157,10 @@ and runs the ETL pipeline. Logs are written to `logs/pipeline.log`.
 
 To run the ETL path instead of the default ELT path:
 ```bash
-docker-compose run --rm etl python run.py --target-schema staging
+make run-staging
 ```
 
-**Docker Hub image:** `davidngan/nyc-taxi-etl:v1.1`
+[Docker Hub image](https://hub.docker.com/r/davidngan/nyc-taxi-etl)
 
 ---
 ### OPTION 2 - Local Setup (MANUAL)
@@ -168,7 +182,7 @@ source .venv/bin/activate    # Mac/Linux
 ### 3. Install dependencies
  
 ```bash
-pip install -r requirements.txt
+make install
 ```
  
 ### 4. Configure environment
@@ -200,6 +214,21 @@ python run.py --target-schema raw
 # ETL path — transforms via Python, loads directly to staging
 python run.py --target-schema staging
 ```
+
+---
+
+## Available Make Commands
+| Command | Description |
+|---|---|
+| `make docker-up` | Build image and start all services |
+| `make docker-down` | Stop containers, keep volume |
+| `make docker-wipe` | Stop containers and delete volume |
+| `make run` | Run the ELT pipeline (loads to raw) |
+| `make run-staging` | Run the ETL pipeline (transforms in Python, loads to staging) |
+| `make test` | Run the full test suite |
+| `make clean` | Remove Python cache files |
+| `make logs` | Tail ETL container logs |
+| `make parse-logs` | Print log summary with error count |
 
 ---
 
@@ -400,7 +429,7 @@ Pipeline raises `TransformationError` and halts if any expectation fails.
 
 
 ## Known Limitations
-**No raw layer idempotency** — Re-running the pipeline on the same source file appends duplicate rows to `raw.yellow_trips`. There is no deduplication at the raw layer. Staging row counts will exceed raw counts on repeated runs. Fix planned with few weeks.
+**No raw layer idempotency** — Re-running the pipeline on the same source file appends duplicate rows to `raw.yellow_trips`. There is no deduplication at the raw layer. Staging row counts will exceed raw counts on repeated runs.
  
 **Two transformation paths require manual sync** — Business rule changes must be applied to both `transform.py` and `raw_to_staging.sql` independently. No automated test verifies parity between the two paths.
  
@@ -409,7 +438,28 @@ Pipeline raises `TransformationError` and halts if any expectation fails.
 **Single file only** — The pipeline processes one file specified in `SOURCE_FILE`. Multiple files are not detected or processed automatically.
 
 **Source data contains boundary dates from adjacent months**: The TLC parquet files for a given month include trips whose pickup timestamps fall outside that month. For example, `yellow_tripdata_2025-04.parquet` contains trips recorded on 2025-03-31 and 2025-05-01. As a result, `reporting.daily_metrics` will contain rows for dates outside the nominal month range. 
-If `yellow_tripdata_2025-03.parquet` and `yellow_tripdata_2025-04.parquet` are both loaded into the same database, both files will contribute trips for 2025-03-31. The ON CONFLICT DO NOTHING guard on reporting.daily_metrics means whichever month runs first wins. The second run's data for that boundary date is silently discarded. The same applies to the last day of each month. This matter will be handled properly within few weeks.
+If `yellow_tripdata_2025-03.parquet` and `yellow_tripdata_2025-04.parquet` are both loaded into the same database, both files will contribute trips for 2025-03-31. The ON CONFLICT DO NOTHING guard on reporting.daily_metrics means whichever month runs first wins. The second run's data for that boundary date is silently discarded. The same applies to the last day of each month. 
+
+---
+
+## RUNBOOK
+**Pipeline exits with `ExtractionError`**
+Cause: Source file missing or column schema mismatch
+Debug: Run `cat logs/pipeline.log` or `make parse-logs`
+Fix: Verify `data/` contains the correct parquet file and `SOURCE_FILE` in `.env` match the filename exactly
+Then re-run with `make run` (ELT) or `make run-staging` (ETL)
+
+**Pipeline exits with `LoadError: relation does not exist`**
+Cause: Database schema not initialized, volume was created before init SQL ran.
+Debug: `docker-compose logs dbx` -> check for schema creation errors
+Fix: `make docker-wipe` -> `make docker-up` to force schema initialization
+
+**`make test` fails with `database taxi_db_test does not exist`**
+Cause: Test database not created, Volume is stale
+Debug: Check whether `02_create_test_db.sql` is in `docker-compose.yml` or not
+Fix: `make docker-wipe` -> `make docker-up` -> `make-test`
+
+
 
 
 ---

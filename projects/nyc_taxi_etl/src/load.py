@@ -63,7 +63,9 @@ def _get_connection(config: dict):
         )
         return conn
     except psycopg2.OperationalError as e:
-        raise LoadError(f"Database connection failed: {e}")
+        msg = f"Database connection failed: {e}"
+        logger.error(msg)
+        raise LoadError(msg)
     
 def _build_insert_sql(target_schema: str, target_table: str, columns_to_insert: list) -> str:
     """
@@ -92,8 +94,9 @@ def _execute_sql_file(filepath:str, config:dict) -> None:
                 logger.info(f"SQL script executed: {filepath} | PSQL Status: {cur.statusmessage} | Rows affected: {cur.rowcount:,}")
                 logger.info(f"Successfully executed sql script: {filepath}")
     except (OSError, psycopg2.Error) as e:
-        logger.error(f"Error during executing SQL Script from {filepath}: {e}")
-        raise LoadError(f"SQL Script execution failed from {filepath}: {e}")
+        msg = f"Error during executing SQL Script from {filepath}: {e}"
+        logger.error(msg)
+        raise LoadError(msg)
     finally:
         conn.close()
         logger.info("Database connection closed")
@@ -130,10 +133,9 @@ def _batch_insert(conn, insert_sql: str, records: list, batch_size: int, target_
             )
 
         except psycopg2.Error as e:
-            logger.error(
-                f"Batch for {target_schema}: {batches_completed+1:,} failed | rows {i:,} to {i+len(batch):,} rolled back | Error: {e}"
-            )
-            raise LoadError(f"Batch for {target_schema} insert failed: {e}")
+            msg = f"Batch for {target_schema}: {batches_completed+1:,} failed | rows {i:,} to {i+len(batch):,} rolled back | Error: {e}"
+            logger.error(msg)
+            raise LoadError(msg)
     logger.info(
         f"Load complete | {rows_loaded:,} rows inserted across {batches_completed:,} batches"
     )
@@ -159,7 +161,9 @@ def load(df: pd.DataFrame, config:dict, target_schema: str)-> None:
     elif target_schema == "staging":
         INSERT_COLUMNS = COLUMNS_FOR_STAGING
     else:
-        raise LoadError(f"{target_schema} schema is faulty, input the valid target schema ['raw'] or ['staging']")
+        msg = f"{target_schema} schema is faulty, input the valid target schema ['raw'] or ['staging']"
+        logger.error(msg)
+        raise LoadError(msg)
 
     insert_sql = _build_insert_sql(target_schema, "yellow_trips", INSERT_COLUMNS)
 

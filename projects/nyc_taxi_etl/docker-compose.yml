@@ -20,6 +20,7 @@ services:
   etl:
     build: .
     # image: davidngan/nyc-taxi-etl:latest
+    profiles: ["run"]
     env_file:
       - .env
     environment:

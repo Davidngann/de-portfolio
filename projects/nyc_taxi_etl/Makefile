@@ -18,7 +18,7 @@ clean:
 	python -c "import shutil, pathlib; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('.pytest_cache')]"
 
 docker-up:
-	docker-compose up --build -d
+	docker-compose up --build
 
 docker-down:
 	docker-compose down
@@ -27,7 +27,7 @@ docker-wipe:
 	docker-compose down -v
 
 logs:
-	docker-compose logs -f etl
+	docker-compose logs -f etl dbx
 
 parse-logs:
 	python log_parser.py

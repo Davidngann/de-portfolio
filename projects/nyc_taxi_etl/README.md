@@ -22,6 +22,7 @@ Current PSQL Schema:
 | `reporting` | `reporting.daily_metrics` | Aggregated daily metrics for downstream analysis |
 
 
+---
 
 ### Two Pipeline Paths
  
@@ -79,6 +80,7 @@ yellow_tripdata_YYYY-MM.parquet
 | Great Expectations | Data quality validation (ETL path) |
 | pytest | Unit and integration test suite |
 | PostgreSQL | Destination database |
+| Docker | Containerization |
 
 
 ---
@@ -95,7 +97,8 @@ nyc_taxi_etl/
 │   ├── validate.py         # Great Expectations suite
 │   └── logger.py           # Dual-handler logger (console + file)
 ├── sql/
-│   ├── create_table.sql            # Three-layer schema DDL
+│   ├── 01_create_tables.sql        # Three-layer schema DDL for production
+│   ├── 02_create_test_db.sql       # Three-layer schema DDL for testing
 │   ├── raw_to_staging.sql          # ELT transformation inside PostgreSQL
 │   └── staging_to_reporting.sql    # Daily aggregation with upsert guard
 ├── tests/
@@ -104,9 +107,15 @@ nyc_taxi_etl/
 │   ├── test_transform.py   # Transform stage tests
 │   └── test_load.py        # Load stage integration tests
 ├── data/                   # Source files - gitignored
+├── img/                    # for README.md attachment
 ├── logs/                   # Pipeline logs - gitignored
 ├── .env.example            # Required environment variables
 ├── requirements.txt        # Dependencies
+├── .dockerignore           # List of ignored files/folder for docker
+├── docker-compose.yml      # Config file for multi-container etl
+├── Dockerfile              # Recipe to build the nyc-taxi-etl image
+├── log_parser.py           # Parse simple summary from the pipeline.log
+├── Makefile                # Config file to standardize the workflow
 └── run.py                  # Entry point with argparse
 ```
 
@@ -117,11 +126,47 @@ nyc_taxi_etl/
 Requires Docker Desktop installed and running.
 
 ### 1. Clone the repo and navigate to project folder
-**If you want to run without cloning the repo**, pull the pre-built image:
 ```bash
-docker pull davidngan/nyc-taxi-etl
+git clone https://github.com/Davidngann/de-portfolio.git
+cd de-portfolio/projects/nyc_taxi_etl
 ```
-Then in `docker-compose.yml`, swap:
+
+### 2. Place your source parquet file in `data/` and edit `.env`
+Download Yellow Taxi trip records (Parquet format) from the [TLC Trip Record Data page](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) and place the file in the `data/` folder.
+Then, edit the environment variables:
+
+```bash
+cp .env.example .env # Edit .env with your preferred PostgreSQL credentials and source filename
+```
+
+### 3. Spin up dbx (PSQL) service:
+```bash
+make docker-up
+```
+
+### 4. Run the pipeline:
+
+```bash
+make run
+```
+It will runs the ETL pipeline. Logs are written to `logs/pipeline.log`.
+
+To run the ETL path instead of the default ELT path:
+```bash
+make run-staging
+```
+
+To bring down and remove all the docker containers and volume, run:
+```bash
+make docker-wipe
+```
+
+Visit the image on Docker Hub: [Docker Hub image](https://hub.docker.com/r/davidngan/nyc-taxi-etl)
+
+**NOTE**
+By default, Docker-compose will try to build the etl image locally.  
+If you want to pull from docker hub instead, swap the comment in `docker-compose.yml`:
+
 ```yaml
 # Comment this out:
 # build: .
@@ -130,40 +175,9 @@ Then in `docker-compose.yml`, swap:
 image: davidngan/nyc-taxi-etl:latest
 ```
 
-**If you want to build from source**, clone and run normally:
-```bash
-git clone https://github.com/Davidngann/de-portfolio.git
-cd de-portfolio/projects/nyc_taxi_etl
-make docker-up
-```
-
-### 2. Copy `.env.example` to `.env` and fill in your credentials
-```bash
-cp .env.example .env
-# Edit .env with your preferred PostgreSQL credentials and source filename
-```
-
-### 3. Place your source parquet file in `data/`
-Download Yellow Taxi trip records (Parquet format) from the [TLC Trip Record Data page](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) and place the file in the `data/` folder.
-
-### 4. Run the pipeline:
-
-```bash
-make run
-```
-
-The stack starts PostgreSQL, creates the schema automatically,
-and runs the ETL pipeline. Logs are written to `logs/pipeline.log`.
-
-To run the ETL path instead of the default ELT path:
-```bash
-make run-staging
-```
-
-[Docker Hub image](https://hub.docker.com/r/davidngan/nyc-taxi-etl)
-
 ---
 ### OPTION 2 - Local Setup (MANUAL)
+Requires PostgreSQL installed and running.
 ### 1. Clone the repo
  
 ```bash
@@ -198,11 +212,11 @@ Download Yellow Taxi trip records (Parquet format) from the [TLC Trip Record Dat
  
 ### 6. Create the destination schemas
  
-Create two databases — `taxi_db` (production) and `taxi_db_test` (tests) — then run:
+Create `taxi_db` (production) database, then run:
  
 ```bash
-psql -U {username} -d taxi_db -f sql/create_table.sql
-psql -U {username} -d taxi_db_test -f sql/create_table.sql
+psql -U {username} -d taxi_db -f sql/01_create_tables.sql
+psql -U {username} -d taxi_db_test -f sql/02_create_test_db.sql # This sql will create the taxi_db_test for you.
 ```
  
 ### 7. Run the pipeline
@@ -262,7 +276,6 @@ The remaining 10 columns are preserved in `raw.yellow_trips` for auditability.
 | `passenger_count` | KEEP | Self-reported, often missing, still usable |
 | `tip_amount` | KEEP | Missing tip treated as $0 |
 | `payment_type` | KEEP | Row is usable without payment method |
-
 
 
 ### Business rules filter
@@ -384,9 +397,11 @@ Load time: ~7 min 46 sec · Batch size: 5,000 · Total batches: 735
 ```bash
 # Full suite
 pytest
- 
+
 # Verbose output
 pytest -v
+# or
+make test
  
 # Single file
 pytest tests/test_transform.py -v
@@ -458,8 +473,6 @@ Fix: `make docker-wipe` -> `make docker-up` to force schema initialization
 Cause: Test database not created, Volume is stale
 Debug: Check whether `02_create_test_db.sql` is in `docker-compose.yml` or not
 Fix: `make docker-wipe` -> `make docker-up` -> `make-test`
-
-
 
 
 ---

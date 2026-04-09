@@ -112,9 +112,9 @@ nyc_taxi_etl/
 ├── .env.example            # Required environment variables
 ├── requirements.txt        # Dependencies
 ├── .dockerignore           # List of ignored files/folder for docker
-├── docker-compose.yml      # Config file for multi-container etl
+├── docker-compose.yml      # Config file for multi-containers etl
 ├── Dockerfile              # Recipe to build the nyc-taxi-etl image
-├── log_parser.py           # Parse simple summary from the pipeline.log
+├── log_parser.py           # Parse summary from the pipeline.log
 ├── Makefile                # Config file to standardize the workflow
 └── run.py                  # Entry point with argparse
 ```
@@ -212,11 +212,12 @@ Download Yellow Taxi trip records (Parquet format) from the [TLC Trip Record Dat
  
 ### 6. Create the destination schemas
  
-Create `taxi_db` (production) database, then run:
- 
 ```bash
+# Create `taxi_db` (production) database,
+psql -U postgres -c "CREATE DATABASE taxi_db"
+# then run:
 psql -U {username} -d taxi_db -f sql/01_create_tables.sql
-psql -U {username} -d taxi_db_test -f sql/02_create_test_db.sql # This sql will create the taxi_db_test for you.
+psql -U {username} -f sql/02_create_test_db.sql # This sql will create the taxi_db_test for you.
 ```
  
 ### 7. Run the pipeline
@@ -400,7 +401,7 @@ pytest
 
 # Verbose output
 pytest -v
-# or
+# or run command below for test in docker.
 make test
  
 # Single file
@@ -415,12 +416,12 @@ pytest --cov=src --cov-report=term-missing
 | File | Coverage | Notes |
 |---|---|---|
 | `extract.py` | 100% | — |
-| `transform.py` | 97% | Generic `except Exception` handler not reachable in tests |
-| `load.py` | 74% | Batch failure path and SQL error paths not tested |
+| `transform.py` | 94% | Generic `except Exception` handler not reachable in tests |
+| `load.py` | 93% | Batch failure path and SQL error paths not tested |
 | `validate.py` | 0% | GE runs via `run.py`, not called in test suite |
 | `config.py` | 0% | Verified via pipeline run |
  
-**Overall: 72%**
+**Overall: 80%**
 
 
 ### Great Expectations

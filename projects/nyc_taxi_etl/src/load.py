@@ -104,7 +104,7 @@ def _execute_sql_file(filepath:str, config:dict) -> None:
 
 def _batch_insert(conn, insert_sql: str, records: list, batch_size: int, target_schema: str) -> None:
     """
-    Core batching loop, shared by load() and load_raw().
+    Core batching loop.
     Each batch is its own transaction.
     A failed batch rolls back only to that batch
     """

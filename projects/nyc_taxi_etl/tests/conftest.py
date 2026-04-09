@@ -66,6 +66,14 @@ def valid_transformed_row() -> dict:
         "trip_duration_minutes":  30.0,
     }
 
+@pytest.fixture
+def valid_transformed_dataframe(valid_transformed_row) -> pd.DataFrame:
+    """
+    A single row matching staging.yellow_trips schema exactly.
+    """
+    return pd.DataFrame([valid_transformed_row])
+
+
 
 @pytest.fixture
 def test_db_config() -> dict:
@@ -80,6 +88,21 @@ def test_db_config() -> dict:
         "db_password": os.getenv("DB_PASSWORD"),
         "batch_size":  5000,
     }
+
+@pytest.fixture
+def invalid_db_config() -> dict:
+    """
+    Invalid Database config
+    """
+    return {
+        "db_host":     "localhost",
+        "db_port":     "5432",
+        "db_name":     "database_that_does_not_exist",
+        "db_user":     "invalid_user",
+        "db_password": "invalid_password",
+        "batch_size":  5000,
+    }
+
 
 @pytest.fixture
 def db_connection(test_db_config):

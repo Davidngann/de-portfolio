@@ -1,4 +1,4 @@
-.PHONY: install run run-staging test clean docker-up docker-down docker-wipe logs parse-logs
+.PHONY: install run run-staging test clean docker-up docker-down docker-wipe logs parse-logs ci
 
 install:
 	pip install -r requirements.txt
@@ -31,3 +31,8 @@ logs:
 
 parse-logs:
 	python log_parser.py
+
+ci:
+	docker-compose up --build -d
+	docker-compose run --rm etl pytest tests/ -v || true
+	docker-compose down -v

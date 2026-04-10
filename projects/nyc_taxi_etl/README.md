@@ -149,7 +149,7 @@ make docker-up
 ```bash
 make run
 ```
-It will runs the ETL pipeline. Logs are written to `logs/pipeline.log`.
+It will runs the ELT pipeline. Logs are written to `logs/pipeline.log`.
 
 To run the ETL path instead of the default ELT path:
 ```bash
@@ -417,7 +417,7 @@ pytest --cov=src --cov-report=term-missing
 |---|---|---|
 | `extract.py` | 100% | — |
 | `transform.py` | 94% | Generic `except Exception` handler not reachable in tests |
-| `load.py` | 93% | Batch failure path and SQL error paths not tested |
+| `load.py` | 93% | Batch failure path is not tested |
 | `validate.py` | 0% | GE runs via `run.py`, not called in test suite |
 | `config.py` | 0% | Verified via pipeline run |
  

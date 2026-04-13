@@ -1,7 +1,7 @@
 from src.config import get_config
 from src.extract import extract
 from src.transform import transform
-from src.load import load, _execute_sql_file
+from src.load import load, execute_sql_file
 from src.validate import validate_dataframe
 from src.logger import get_logger
 import argparse
@@ -21,7 +21,7 @@ def parse_args():
 def main():
     args = parse_args()
     config = get_config()
-    target_schema = args.target_schema
+    target_schema = args.target_schema.lower()
     logger.info(f"Pipeline starting | ENV: {config.get('pipeline_env', 'DEVELOPMENT')} | Target Schema: {target_schema}")
 
     df_raw = extract(config['source_file'])
@@ -29,15 +29,18 @@ def main():
     if target_schema == "raw":
         # Loading the raw data source into db directly, skipping transfor layer from python.
         load(df_raw, config, target_schema)
-        _execute_sql_file('sql/raw_to_staging.sql', config)
-        _execute_sql_file('sql/staging_to_reporting.sql', config)
+        # validate_row_counts(config, df_raw, target_schema)
+        execute_sql_file('sql/raw_to_staging.sql', config)
+        
 
     elif target_schema == "staging":
         df_clean = transform(df_raw)
         # Validate transform, before loading
         validate_dataframe(df_clean, stage="transform")
         load(df_clean, config, target_schema)
-        _execute_sql_file('sql/staging_to_reporting.sql', config)
+        # validate_row_counts(config, df_clean, target_schema)
+
+    execute_sql_file('sql/staging_to_reporting.sql', config)
 
     logger.info("Pipeline complete")
 

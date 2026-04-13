@@ -12,8 +12,11 @@ The NYC Taxi and Limousine commision publishes [monthly trip records](https://ww
 ---
 
 ## Architecture
+Architecture Diagram:
+![Pipeline Architecture](docs/architecture-diagram.png)
+
 Current PSQL Schema:
-![Three-layer PSQL schema architecture](<img/three-layer schema architecture.png>)
+![Three-layer PSQL schema architecture](<docs/three-layer schema architecture.png>)
 
 | Layer | Table | Purpose |
 |---|---|---|

@@ -82,7 +82,7 @@ def _to_python_scalar(v):
         return v.item()
     return v
 
-def _execute_sql_file(filepath:str, config:dict) -> None:
+def execute_sql_file(filepath:str, config:dict) -> None:
     conn = _get_connection(config)
     try:
         with conn:
@@ -108,16 +108,16 @@ def _batch_insert(conn, insert_sql: str, records: list, batch_size: int, target_
     Each batch is its own transaction.
     A failed batch rolls back only to that batch
     """
-    total_rows = len(records)
-    total_batches = (total_rows + batch_size - 1) // batch_size
+    total_records = len(records)
+    total_batches = (total_records + batch_size - 1) // batch_size
     rows_loaded = 0
     batches_completed = 0
     
     logger.info(
-        f"[{target_schema}] starting load: {total_rows:,} rows | Batch size: {batch_size:,} | Total batches: {total_batches:,}"
+        f"[{target_schema}] starting load: {total_records:,} rows | Batch size: {batch_size:,} | Total batches: {total_batches:,}"
     )
 
-    for i in range(0, total_rows, batch_size):
+    for i in range(0, total_records, batch_size):
         batch = records[i: i+batch_size]
         try:
             with conn:
@@ -129,7 +129,7 @@ def _batch_insert(conn, insert_sql: str, records: list, batch_size: int, target_
             batches_completed += 1
 
             logger.info(
-                f"Batch for {target_schema}: {batches_completed:,}/{total_batches:,} | Rows loaded: {rows_loaded:,}/{total_rows:,}"
+                f"Batch for {target_schema}: {batches_completed:,}/{total_batches:,} | Rows loaded: {rows_loaded:,}/{total_records:,}"
             )
 
         except psycopg2.Error as e:
@@ -139,6 +139,46 @@ def _batch_insert(conn, insert_sql: str, records: list, batch_size: int, target_
     logger.info(
         f"Load complete | {rows_loaded:,} rows inserted across {batches_completed:,} batches"
     )
+
+
+def validate_row_counts(conn, expected_row_count: int, target_schema: str) -> None:
+    """
+    Post-load validation: verify row counts across all three layers.
+    Raises LoadError if the counts don't match expected source count.
+    """
+    try:
+        with conn.cursor() as cur:
+            
+            if target_schema == "raw":
+                cur.execute("SELECT COUNT(*) FROM raw.yellow_trips")
+            elif target_schema == "staging":
+                cur.execute("SELECT COUNT(*) FROM staging.yellow_trips")
+            else: 
+                msg = f"Unknown target_schema for validation: {target_schema}"
+                logger.error(msg)
+                raise LoadError(msg)
+            
+            result = cur.fetchone()
+            if result is None:
+                msg = f"Row count query returned no result for {target_schema}"
+                logger.error(msg)
+                raise LoadError(msg)
+            
+            row_count = result[0]
+            if row_count != expected_row_count:
+                msg = f"Row count mismatch for {target_schema} layer: Expecting {expected_row_count:,}, got {row_count:,}"
+                logger.error(msg)
+                raise LoadError(msg)
+            
+            logger.info(f"Row count validation passed | {target_schema}: {row_count:,} rows")
+
+
+    except psycopg2.Error as e:
+        msg = f"Row count validation query failed: {e}"
+        logger.error(msg)
+        raise LoadError(msg)
+    
+
 
 def load(df: pd.DataFrame, config:dict, target_schema: str)-> None:
     """
@@ -185,6 +225,7 @@ def load(df: pd.DataFrame, config:dict, target_schema: str)-> None:
     # --- Start loading process
     try:
         _batch_insert(conn, insert_sql, records, batch_size, target_schema)
+        validate_row_counts(conn, total_rows, target_schema)
     finally:
         conn.close()
         logger.info("Database connection closed")

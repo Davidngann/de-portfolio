@@ -110,7 +110,7 @@ nyc_taxi_etl/
 │   ├── test_transform.py   # Transform stage tests
 │   └── test_load.py        # Load stage integration tests
 ├── data/                   # Source files - gitignored
-├── img/                    # for README.md attachment
+├── docs/                   # for README.md attachment
 ├── logs/                   # Pipeline logs - gitignored
 ├── .env.example            # Required environment variables
 ├── requirements.txt        # Dependencies
@@ -238,15 +238,22 @@ python run.py --target-schema staging
 ## Available Make Commands
 | Command | Description |
 |---|---|
-| `make docker-up` | Build image and start all services |
-| `make docker-down` | Stop containers, keep volume |
-| `make docker-wipe` | Stop containers and delete volume |
+| `make install` | Install dependencies from requirements.txt locally |
+| `make build` | Build the etl container image |
 | `make run` | Run the ELT pipeline (loads to raw) |
-| `make run-staging` | Run the ETL pipeline (transforms in Python, loads to staging) |
+| `make run-staging` | Run the ETL pipeline (transforms in Python, loads to staging) | 
 | `make test` | Run the full test suite |
 | `make clean` | Remove Python cache files |
-| `make logs` | Tail ETL container logs |
-| `make parse-logs` | Print log summary with error count |
+| `make docker-up` | Start database container (dbx) |
+| `make docker-down` | Stop containers, keep volume (dbx) |
+| `make docker-wipe` | Stop containers and delete volume |
+| `make logs` | Tail dbx containers logs |
+| `make live-logs` | Tail containers in real time while pipeline is running |
+| `make parse-logs` | Print log summary with error count from pipeline.log |
+| `make ci` | Build image, start stack, run tests, tear down. Leaves stack running on test failure |
+| `make ci-local` | Build image, start stack, run tests, and tear down the stack even if there is an error |
+
+
 
 ---
 
@@ -462,21 +469,25 @@ If `yellow_tripdata_2025-03.parquet` and `yellow_tripdata_2025-04.parquet` are b
 ---
 
 ## RUNBOOK
-**Pipeline exits with `ExtractionError`**
-Cause: Source file missing or column schema mismatch
-Debug: Run `cat logs/pipeline.log` or `make parse-logs`
-Fix: Verify `data/` contains the correct parquet file and `SOURCE_FILE` in `.env` match the filename exactly
+### Pipeline exits with `ExtractionError`
+**Symptom:** `ERROR | src.extract | Source file not found: /app/data/`  
+Cause: Source file missing or column schema mismatch  
+Debug: Run `cat logs/pipeline.log` or `make parse-logs`  
+Fix: Verify `data/` contains the correct parquet file and `SOURCE_FILE` in `.env` match the filename exactly  
 Then re-run with `make run` (ELT) or `make run-staging` (ETL)
 
-**Pipeline exits with `LoadError: relation does not exist`**
-Cause: Database schema not initialized, volume was created before init SQL ran.
-Debug: `docker-compose logs dbx` -> check for schema creation errors
-Fix: `make docker-wipe` -> `make docker-up` to force schema initialization
+### Pipeline exits with `LoadError: Database connection failed:`  
+**Symptom:** `ERROR | src.load | Database connection failed: FATAL: password authentication failed`  
+Cause: Wrong database credentials.  
+Debug: Run `cat logs/pipeline.log` or `make parse-logs`  
+Fix: Verify the database credentials in `.env` match the actual database credentials.  
+Then re-run with `make run` (ELT) or `make run-staging` (ETL)
 
-**`make test` fails with `database taxi_db_test does not exist`**
-Cause: Test database not created, Volume is stale
-Debug: Check whether `02_create_test_db.sql` is in `docker-compose.yml` or not
-Fix: `make docker-wipe` -> `make docker-up` -> `make-test`
+
+### `make test` fails with `FATAL:  database "taxi_db_test" does not exist"`
+Cause: Test database was not created, Volume is stale  
+Debug: Run `make logs` to confirm initdb errors  
+Fix: Ensure `02_create_test_db.sql` exists under volume in dbx service, then `make docker-wipe` -> `make docker-up` -> `make test`  
 
 
 ---

@@ -70,6 +70,7 @@ def test_execute_sql_file_raises_load_error_on_bad_connection(invalid_db_config)
     with pytest.raises(LoadError, match="Database connection failed"):
         execute_sql_file('staging_to_reporting.sql', invalid_db_config)
 
+
 @pytest.mark.parametrize(
         "target_schema, df_fixture",
         [

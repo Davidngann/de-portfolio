@@ -102,23 +102,28 @@ def execute_sql_file(filepath:str, config:dict) -> None:
         logger.info("Database connection closed")
 
 
-def _batch_insert(conn, insert_sql: str, records: list, batch_size: int, target_schema: str) -> None:
+def _batch_insert(conn, insert_sql: str, df: pd.DataFrame, columns:list, batch_size: int, target_schema: str) -> None:
     """
     Core batching loop.
     Each batch is its own transaction.
     A failed batch rolls back only to that batch
     """
-    total_records = len(records)
+    total_records = len(df)
     total_batches = (total_records + batch_size - 1) // batch_size
     rows_loaded = 0
-    batches_completed = 0
     
     logger.info(
         f"[{target_schema}] starting load: {total_records:,} rows | Batch size: {batch_size:,} | Total batches: {total_batches:,}"
     )
 
-    for i in range(0, total_records, batch_size):
-        batch = records[i: i+batch_size]
+    for batch_num, i in enumerate(range(0, total_records, batch_size), 1):
+        batch_df = df[columns].iloc[i: i+batch_size]
+
+        batch = [
+            tuple(_to_python_scalar(v) for v in row)
+            for row in batch_df.itertuples(index=False, name=None)
+        ]
+
         try:
             with conn:
                 with conn.cursor() as cur:
@@ -126,18 +131,17 @@ def _batch_insert(conn, insert_sql: str, records: list, batch_size: int, target_
                         cur, insert_sql, batch, page_size=batch_size
                     )
             rows_loaded += len(batch)
-            batches_completed += 1
 
             logger.info(
-                f"Batch for {target_schema}: {batches_completed:,}/{total_batches:,} | Rows loaded: {rows_loaded:,}/{total_records:,}"
+                f"Batch for {target_schema}: {batch_num:,}/{total_batches:,} | Rows loaded: {rows_loaded:,}/{total_records:,}"
             )
 
         except psycopg2.Error as e:
-            msg = f"Batch for {target_schema}: {batches_completed+1:,} failed | rows {i:,} to {i+len(batch):,} rolled back | Error: {e}"
+            msg = f"Batch for {target_schema}: {batch_num+1:,} failed | rows {i:,} to {i+len(batch):,} rolled back | Error: {e}"
             logger.error(msg)
             raise LoadError(msg)
     logger.info(
-        f"Load complete | {rows_loaded:,} rows inserted across {batches_completed:,} batches"
+        f"Load complete | {rows_loaded:,} rows inserted across {(rows_loaded + batch_size -1)//batch_size:,} batches"
     )
 
 
@@ -206,25 +210,13 @@ def load(df: pd.DataFrame, config:dict, target_schema: str)-> None:
         raise LoadError(msg)
 
     insert_sql = _build_insert_sql(target_schema, "yellow_trips", INSERT_COLUMNS)
-
     total_rows = len(df)
-    records = []
-
-    logger.info(f"Preparing {total_rows:,} rows, ensuring compatibility for insert into {target_schema}...")
-
-    for i, row in enumerate(df[INSERT_COLUMNS].itertuples(index=False, name=None)):
-        records.append(tuple(_to_python_scalar(v) for v in row))
-        if (i + 1 ) % 500_000 == 0:
-            logger.info(f"Scalar conversion: {i + 1:,}/{total_rows:,} rows converted")
-
-    logger.info(f"Row preparation complete: {len(records):,} records ready")
 
     conn = _get_connection(config)
 
-
     # --- Start loading process
     try:
-        _batch_insert(conn, insert_sql, records, batch_size, target_schema)
+        _batch_insert(conn, insert_sql, df, INSERT_COLUMNS, batch_size, target_schema)
         validate_row_counts(conn, total_rows, target_schema)
     finally:
         conn.close()

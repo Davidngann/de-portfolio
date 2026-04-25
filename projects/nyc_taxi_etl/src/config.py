@@ -11,7 +11,7 @@ def get_config() -> dict:
     """
 
     config={
-        "source_file": os.getenv("SOURCE_FILE"),
+        "source_file":  os.getenv("SOURCE_FILE"),
         "db_host":      os.getenv("DB_HOST"),
         "db_port":      os.getenv("DB_PORT", "5432"),
         "db_name":      os.getenv("DB_NAME"),

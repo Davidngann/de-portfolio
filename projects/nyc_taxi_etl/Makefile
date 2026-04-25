@@ -1,4 +1,4 @@
-.PHONY: install build run run-staging test clean docker-up docker-down docker-wipe logs live-logs parse-logs ci ci-local
+.PHONY: install build run run-staging test clean docker-up docker-down docker-wipe logs live-logs parse-logs ci ci-local airflow-up airflow-down airflow-wipe
 
 install:
 	pip install -r requirements.txt
@@ -49,3 +49,13 @@ ci-local:
 	docker compose up -d
 	-docker compose run --rm etl pytest tests/ -v
 	docker compose down -v
+
+
+airflow-up:
+	cd airflow && docker compose up -d
+
+airflow-down:
+	cd airflow && docker compose down
+
+airflow-wipe:
+	cd airflow && docker compose down -v

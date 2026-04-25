@@ -177,6 +177,14 @@ If you want to pull from docker hub instead, swap the comment in `docker-compose
 # Uncomment this:
 image: davidngan/nyc-taxi-etl:latest
 ```
+---
+To run CI workflow:
+```bash
+make docker-wipe # Bring everything down
+make build # Ensure clean build
+make docker-up # Bring dbx service up
+make ci # Run CI workflow and tear down all services and volumes.
+```
 
 ---
 ### OPTION 2 - Local Setup (MANUAL)
@@ -401,7 +409,7 @@ Load time: ~7 min 46 sec · Batch size: 5,000 · Total batches: 735
 |---|---|---|
 | `test_extract.py` | 5 | Schema validation, missing file, unreadable file, missing columns, empty file |
 | `test_transform.py` | 14 | Column selection, business rules, null handling, type casting, column rename, duration filters, row counts |
-| `test_load.py` | 7 | Row counts to raw and staging, bad connection config, batch size variations, invalid schema |
+| `test_load.py` | 10 | Row counts to raw and staging, bad connection config, batch size variations, invalid schema, execute_sql_file errors, validate_row_counts |
 
 ### Running tests
  
@@ -427,11 +435,11 @@ pytest --cov=src --cov-report=term-missing
 |---|---|---|
 | `extract.py` | 100% | — |
 | `transform.py` | 94% | Generic `except Exception` handler not reachable in tests |
-| `load.py` | 93% | Batch failure path is not tested |
+| `load.py` | 86% | Batch failure path is not tested |
 | `validate.py` | 0% | GE runs via `run.py`, not called in test suite |
 | `config.py` | 0% | Verified via pipeline run |
  
-**Overall: 80%**
+**Overall: 78%**
 
 
 ### Great Expectations

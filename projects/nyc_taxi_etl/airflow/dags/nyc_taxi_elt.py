@@ -1,23 +1,44 @@
 import sys
 sys.path.insert(0, "/opt/airflow")
 
+from datetime import timedelta
 from pathlib import Path
 import pendulum
 from airflow.sdk import dag, task
+from callbacks import on_task_failure
+from airflow.providers.slack.notifications.slack_webhook import send_slack_webhook_notification
+from airflow.providers.standard.sensors.filesystem import FileSensor
 
 CONN_ID = "nyc_taxi_pg"
 SQL_DIR = Path("/opt/airflow/sql")
-# DATA_DIR = Path("opt/airflow/data")
+
+# NOTIFICATION
+slack_webhook_on_task_failure = send_slack_webhook_notification(
+    slack_webhook_conn_id = "slack_webhook",
+    text = """
+:red_circle: *Task Failed* | `{{ dag.dag_id }}` | `{{ task.task_id }}`
+*Date:* {{ ds }} | *Try:* {{ ti.try_number }}/{{ ti.max_tries + 1 }} | *Run:* `{{ run_id }}`
+*Exception:* `{{ exception }}`
+*Log:* {{ ti.log_url }}
+
+""",
+)
 
 
 @dag(
     dag_id = "nyc_taxi_elt",
-    schedule = None,
+    schedule = "@daily",
     start_date = pendulum.datetime(2026,1,1, tz = "UTC"),
     catchup = False,
-    tags = ["nyc-taxi", "elt", "etl"]
-)
+    tags = ["nyc-taxi", "elt", "etl"],
+    default_args = {
+        "retries": 2,
+        "retry_delay": timedelta(minutes=5),
+        "on_retry_callback": slack_webhook_on_task_failure,
+        "on_failure_callback": slack_webhook_on_task_failure,
 
+    }
+)
 def nyc_taxi_elt():
     """
     NYC Taxi ELT/ETL pipeline.
@@ -49,15 +70,14 @@ def nyc_taxi_elt():
         PostgresHook(CONN_ID).run(sql)
 
 
-    # Truncate db for cleaner testing ONLY
-    @task
-    def truncate_all() -> str:
-        from airflow.providers.postgres.hooks.postgres import PostgresHook
-        PostgresHook(CONN_ID).run(
-            """
-            TRUNCATE TABLE raw.yellow_trips, staging.yellow_trips, reporting.daily_metrics;
-            """)
-        return "truncated"
+    wait_for_file = FileSensor(
+        task_id = "wait_for_file",
+        filepath = "/opt/airflow/data/{{ var.value.source_file }}",
+        poke_interval = 30,
+        timeout=300,
+        mode="poke",
+        retries=0,
+    )
 
     # Extract
     @task
@@ -65,7 +85,7 @@ def nyc_taxi_elt():
         from src.extract import extract
         from airflow.sdk import Variable
 
-        source_path = Variable.get("temp_source_file")
+        source_path = Variable.get("source_file")
         output_path = "/tmp/nyc_taxi_raw.parquet"
 
         df = extract(source_path)
@@ -87,9 +107,17 @@ def nyc_taxi_elt():
     def load_raw(parquet_path: str) -> str:
         import pandas as pd
         from src.load import load
+        from airflow.sdk import Variable
+        from airflow.providers.postgres.hooks.postgres import PostgresHook
 
+        source_file=Variable.get("source_file")
+
+        PostgresHook(CONN_ID).run(
+            "DELETE FROM raw.yellow_trips WHERE source_file = %s",
+            parameters=(source_file,)
+        )
         df = pd.read_parquet(parquet_path)
-        load(df, _get_config(), "raw")
+        load(df, _get_config(), "raw", source_file)
 
         return "raw.yellow_trips"
     
@@ -119,9 +147,17 @@ def nyc_taxi_elt():
     def load_staging(parquet_path: str) -> str:
         import pandas as pd
         from src.load import load
+        from airflow.sdk import Variable
+        from airflow.providers.postgres.hooks.postgres import PostgresHook
+
+        source_file = Variable.get("source_file")
+        PostgresHook(CONN_ID).run(
+            "DELETE FROM staging.yellow_trips WHERE source_file=%s",
+            parameters=(source_file,)
+        )
 
         df = pd.read_parquet(parquet_path)
-        load(df, _get_config(), "staging")
+        load(df, _get_config(), "staging", source_file)
 
         return "staging.yellow_trips"
     
@@ -137,10 +173,10 @@ def nyc_taxi_elt():
 
         
     # Wiring workflow
-    truncated = truncate_all()
+    # truncated = truncate_all()
     raw_path = extract()
     b = branch()
-    truncated >> raw_path >> b
+    wait_for_file >> raw_path >> b
 
     # ELT Path
     elt_loaded = load_raw(raw_path)

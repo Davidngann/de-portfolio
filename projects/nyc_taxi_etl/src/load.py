@@ -20,6 +20,7 @@ COLUMNS_FOR_STAGING = [
     "total_amount",
     "payment_type",
     "trip_duration_minutes",
+    "source_file"
 ]
 
 # Insert the raw columns 
@@ -43,7 +44,8 @@ COLUMNS_FOR_RAW = [
     "total_amount",
     "congestion_surcharge",
     "Airport_fee",
-    "cbd_congestion_fee"
+    "cbd_congestion_fee",
+    "source_file"
 ]
 
 
@@ -145,22 +147,19 @@ def _batch_insert(conn, insert_sql: str, df: pd.DataFrame, columns:list, batch_s
     )
 
 
-def validate_row_counts(conn, expected_row_count: int, target_schema: str) -> None:
+def validate_row_counts(conn, expected_row_count: int, target_schema: str, source_file: str) -> None:
     """
     Post-load validation: verify row counts across all three layers.
     Raises LoadError if the counts don't match expected source count.
     """
+    if target_schema not in ("raw", "staging"):
+        msg = f"Unknown target_schema for validation: {target_schema}"
+        logger.error(msg)
+        raise LoadError(msg)
     try:
         with conn.cursor() as cur:
-            
-            if target_schema == "raw":
-                cur.execute("SELECT COUNT(*) FROM raw.yellow_trips")
-            elif target_schema == "staging":
-                cur.execute("SELECT COUNT(*) FROM staging.yellow_trips")
-            else: 
-                msg = f"Unknown target_schema for validation: {target_schema}"
-                logger.error(msg)
-                raise LoadError(msg)
+            query = f"SELECT COUNT(*) FROM {target_schema}.yellow_trips WHERE source_file = %s"
+            cur.execute(query, (source_file,))
             
             result = cur.fetchone()
             if result is None:
@@ -184,7 +183,7 @@ def validate_row_counts(conn, expected_row_count: int, target_schema: str) -> No
     
 
 
-def load(df: pd.DataFrame, config:dict, target_schema: str)-> None:
+def load(df: pd.DataFrame, config:dict, target_schema: str, source_file: str)-> None:
     """
     Insert the clean DataFrame into the target schema's table in batches
 
@@ -211,13 +210,17 @@ def load(df: pd.DataFrame, config:dict, target_schema: str)-> None:
 
     insert_sql = _build_insert_sql(target_schema, "yellow_trips", INSERT_COLUMNS)
     total_rows = len(df)
+    if source_file:
+        df = df.copy()
+        df['source_file'] = source_file
 
     conn = _get_connection(config)
 
     # --- Start loading process
     try:
         _batch_insert(conn, insert_sql, df, INSERT_COLUMNS, batch_size, target_schema)
-        validate_row_counts(conn, total_rows, target_schema)
+        if target_schema == "staging":
+            validate_row_counts(conn, total_rows, target_schema, source_file)
     finally:
         conn.close()
         logger.info("Database connection closed")

@@ -1,3 +1,11 @@
+DELETE FROM staging.yellow_trips
+WHERE source_file = (
+    SELECT source_file
+    FROM raw.yellow_trips
+    ORDER BY loaded_at DESC
+    LIMIT 1
+);
+
 INSERT INTO staging.yellow_trips (
     pickup_at,             
     dropoff_at,            
@@ -9,7 +17,8 @@ INSERT INTO staging.yellow_trips (
     tip_amount,            
     total_amount,          
     payment_type,          
-    trip_duration_minutes
+    trip_duration_minutes,
+    source_file
 )
 SELECT 
     tpep_pickup_datetime::TIMESTAMP AT TIME ZONE 'America/New_York',
@@ -22,9 +31,16 @@ SELECT
     tip_amount::NUMERIC(8, 2),
     total_amount::NUMERIC(8, 2),
     payment_type::NUMERIC::SMALLINT,
-    EXTRACT(EPOCH FROM(tpep_dropoff_datetime::TIMESTAMP -  tpep_pickup_datetime::TIMESTAMP))/60
+    EXTRACT(EPOCH FROM(tpep_dropoff_datetime::TIMESTAMP -  tpep_pickup_datetime::TIMESTAMP))/60,
+    source_file
 FROM raw.yellow_trips
-WHERE fare_amount ~ '^-?[0-9]+\.?[0-9]*$' 
+ WHERE source_file = (
+    SELECT source_file
+    FROM raw.yellow_trips
+    ORDER BY loaded_at DESC
+    LIMIT 1
+    )
+    AND fare_amount ~ '^-?[0-9]+\.?[0-9]*$' 
     AND fare_amount::NUMERIC > 0
     AND total_amount ~ '^-?[0-9]+\.?[0-9]*$'
     AND total_amount::NUMERIC > 0

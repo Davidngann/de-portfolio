@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+import os
 
 def get_logger(name: str) -> logging.Logger:
 
@@ -8,7 +9,16 @@ def get_logger(name: str) -> logging.Logger:
         return logger
     
     logger.setLevel(logging.DEBUG)
+
+    if os.environ.get('AIRFLOW_HOME'):
+        return logger
+    
     logger.propagate = False
+
+    # Set format for logger
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+    )
 
     # Console handler
     console_handler = logging.StreamHandler()
@@ -19,11 +29,6 @@ def get_logger(name: str) -> logging.Logger:
     log_path.parent.mkdir(parents=True, exist_ok=True) 
     file_handler = logging.FileHandler(log_path)
     file_handler.setLevel(logging.DEBUG)
-
-    # Set format for logger
-    formatter = logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-    )
 
     console_handler.setFormatter(formatter)
     file_handler.setFormatter(formatter)

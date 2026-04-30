@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS raw.yellow_trips(
     congestion_surcharge  TEXT,
     airport_fee           TEXT,
     cbd_congestion_fee    TEXT,
+    source_file           TEXT,
     loaded_at             TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS staging.yellow_trips (
     total_amount            NUMERIC(8, 2) NOT NULL,
     payment_type            SMALLINT,
     trip_duration_minutes   NUMERIC(6, 2) NOT NULL,
+    source_file             TEXT,
     loaded_at               TIMESTAMPTZ DEFAULT NOW()
 );
 

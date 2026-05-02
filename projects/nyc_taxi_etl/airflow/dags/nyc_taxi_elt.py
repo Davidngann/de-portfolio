@@ -31,6 +31,7 @@ slack_webhook_on_task_failure = send_slack_webhook_notification(
     start_date = pendulum.datetime(2026,1,1, tz = "UTC"),
     catchup = False,
     tags = ["nyc-taxi", "elt", "etl"],
+    max_active_runs=1,
     default_args = {
         "retries": 2,
         "retry_delay": timedelta(minutes=5),
@@ -187,8 +188,7 @@ def nyc_taxi_elt():
     etl_loaded = load_staging(etl_transformed)
 
     # Converge
-    b >> elt_loaded
-    b >> etl_transformed
+    b >> [elt_loaded, etl_transformed]
 
     [elt_staged, etl_loaded] >> staging_to_reporting()
 

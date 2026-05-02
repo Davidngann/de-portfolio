@@ -77,6 +77,16 @@ x-airflow-common:
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
     # The following line can be used to set a custom config file, stored in the local config folder
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+
+    # Project ENV
+    # -- CONNECTION --
+    AIRFLOW_CONN_NYC_TAXI_PG: 'postgresql://${DB_USER}:${DB_PASSWORD}@host.docker.internal:5433/${DB_NAME}'
+    AIRFLOW_CONN_FS_DEFAULT: 'fs://'
+    AIRFLOW_CONN_SLACK_WEBHOOK: '{"conn_type": "slackwebhook", "password": "${SLACK_WEBHOOK_URL}"}'
+    # -- VARIABLE --
+    AIRFLOW_VAR_PIPELINE_MODE: '${PIPELINE_MODE:-elt}'
+    AIRFLOW_VAR_SOURCE_FILE: '${SOURCE_FILE}'
+
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs

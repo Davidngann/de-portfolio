@@ -26,6 +26,7 @@ SELECT
     MAX(trip_duration_minutes),
     AVG(trip_duration_minutes)
 FROM staging.yellow_trips
+WHERE source_file = %(source_file)s
 GROUP BY DATE(pickup_at AT TIME ZONE 'America/New_York')
 ON CONFLICT(metric_date) DO UPDATE SET
     total_trips                 = EXCLUDED.total_trips,

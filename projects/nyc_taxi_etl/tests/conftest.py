@@ -5,6 +5,20 @@ import psycopg2
 from dotenv import load_dotenv
 from pathlib import Path
 
+
+SOURCE_YEAR = 1990
+SOURCE_MONTH = 1
+VALID_FILENAME = f"yellow_tripdata_{SOURCE_YEAR}-{SOURCE_MONTH:02d}.parquet"
+
+
+@pytest.fixture
+def source_period() -> tuple[int, int]:
+    return SOURCE_YEAR, SOURCE_MONTH
+
+@pytest.fixture
+def test_source_file() -> str:
+    return VALID_FILENAME
+
 @pytest.fixture
 def valid_row() -> dict:
     """
@@ -14,8 +28,8 @@ def valid_row() -> dict:
     """
     return {
         "VendorID"              : 1,
-        "tpep_pickup_datetime"  : pd.Timestamp("2025-04-01 08:00:00"),
-        "tpep_dropoff_datetime" : pd.Timestamp("2025-04-01 08:30:00"),
+        "tpep_pickup_datetime"  : pd.Timestamp(f"{SOURCE_YEAR}-{SOURCE_MONTH:02d}-02 08:00:00"),
+        "tpep_dropoff_datetime" : pd.Timestamp(f"{SOURCE_YEAR}-{SOURCE_MONTH:02d}-02 08:30:00"),
         "passenger_count"       : 1.0,
         "trip_distance"         : 3.5,
         "RatecodeID"            : 1.0,
@@ -53,8 +67,8 @@ def valid_transformed_row() -> dict:
     A single row matching staging.yellow_trips schema exactly.
     """
     return {
-        "pickup_at":              pd.Timestamp("2025-04-01 08:00:00"),
-        "dropoff_at":             pd.Timestamp("2025-04-01 08:30:00"),
+        "pickup_at":              pd.Timestamp(f"{SOURCE_YEAR}-{SOURCE_MONTH:02d}-01 08:00:00"),
+        "dropoff_at":             pd.Timestamp(f"{SOURCE_YEAR}-{SOURCE_MONTH:02d}-01 08:30:00"),
         "passenger_count":        pd.NA,
         "trip_distance":          3.5,
         "pickup_zone_id":         100,
@@ -81,6 +95,7 @@ def test_db_config() -> dict:
     Database config pointing to taxi_db_test [NOT PRODUCTION]
     """
     return{
+        "source_file": os.getenv("SOURCE_FILE"),
         "db_host":     os.getenv("DB_HOST"),
         "db_port":     os.getenv("DB_PORT", "5432"),
         "db_name":     os.getenv("TEST_DB_NAME"),

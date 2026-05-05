@@ -1,11 +1,13 @@
-DELETE FROM staging.yellow_trips
-WHERE source_file = (
-    SELECT source_file
-    FROM raw.yellow_trips
-    ORDER BY loaded_at DESC
-    LIMIT 1
-);
-
+WITH get_source_file AS(
+    SELECT 
+        %(source_file)s::TEXT AS source_file,
+        TO_DATE(SUBSTRING(%(source_file)s FROM '\d{4}-\d{2}'), 'YYYY-MM') AS month_start
+),
+deleted AS(
+DELETE FROM staging.yellow_trips s
+USING get_source_file g
+WHERE s.source_file = g.source_file
+)
 INSERT INTO staging.yellow_trips (
     pickup_at,             
     dropoff_at,            
@@ -32,14 +34,18 @@ SELECT
     total_amount::NUMERIC(8, 2),
     payment_type::NUMERIC::SMALLINT,
     EXTRACT(EPOCH FROM(tpep_dropoff_datetime::TIMESTAMP -  tpep_pickup_datetime::TIMESTAMP))/60,
-    source_file
-FROM raw.yellow_trips
- WHERE source_file = (
-    SELECT source_file
-    FROM raw.yellow_trips
-    ORDER BY loaded_at DESC
-    LIMIT 1
-    )
+    r.source_file
+FROM raw.yellow_trips r
+JOIN get_source_file g USING (source_file)
+WHERE tpep_pickup_datetime IS NOT NULL
+    AND tpep_dropoff_datetime IS NOT NULL
+    AND PULocationID IS NOT NULL
+    AND DOLocationID IS NOT NULL
+    AND trip_distance IS NOT NULL
+    AND fare_amount IS NOT NULL
+    AND total_amount IS NOT NULL
+    AND tpep_pickup_datetime::TIMESTAMP AT TIME ZONE 'America/New_York' >= g.month_start - INTERVAL '1 day'
+    AND tpep_pickup_datetime::TIMESTAMP AT TIME ZONE 'America/New_York' < g.month_start + INTERVAL '1 month' + INTERVAL '1 day'
     AND fare_amount ~ '^-?[0-9]+\.?[0-9]*$' 
     AND fare_amount::NUMERIC > 0
     AND total_amount ~ '^-?[0-9]+\.?[0-9]*$'

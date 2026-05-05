@@ -1,6 +1,7 @@
 import pandas as pd
 from src.exceptions import TransformationError
 from src.logger import get_logger
+from datetime import datetime, timedelta
 
 logger = get_logger(__name__)
 
@@ -42,7 +43,8 @@ DROP_IF_NULL = [
 ]
 
 
-def transform(df: pd.DataFrame) -> pd.DataFrame:
+
+def transform(df: pd.DataFrame, source_year:int, source_month: int) -> pd.DataFrame:
     """
     Clean and reshape the raw extraction DataFrame
     to match the destination schema precisely.
@@ -66,6 +68,7 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
 
         df = df[list(EXPECTED_COLUMNS)].copy()
 
+
         # Drop nulls
         df = df.dropna(subset=DROP_IF_NULL)
         len_after_null_drop = len(df)
@@ -85,9 +88,10 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
 
         logger.info(f"Business rule filter complete: {len_dropped_business:,} rows removed, {len_after_dropped_business:,} remaining | dropped percentage: {pct_dropped_business:.1f}% ")
         
+
         # Cast type explicitly
-        df['tpep_pickup_datetime'] = pd.to_datetime(df['tpep_pickup_datetime']).dt.tz_localize('America/New_York')
-        df['tpep_dropoff_datetime'] = pd.to_datetime(df['tpep_dropoff_datetime']).dt.tz_localize('America/New_York')
+        df['tpep_pickup_datetime'] = pd.to_datetime(df['tpep_pickup_datetime']).dt.tz_localize('America/New_York', nonexistent='shift_forward', ambiguous='NaT')
+        df['tpep_dropoff_datetime'] = pd.to_datetime(df['tpep_dropoff_datetime']).dt.tz_localize('America/New_York', nonexistent='shift_forward', ambiguous='NaT')
         df['trip_distance'] = df['trip_distance'].astype("float64")
         df['fare_amount'] = df['fare_amount'].astype("float64")
         df['tip_amount'] = df['tip_amount'].astype("Float64")
@@ -100,6 +104,27 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
         df['payment_type'] = df['payment_type'].astype("Int8")
 
         logger.info("Type casting complete")
+
+
+        # Check timeframe plausibility
+        # Includes 1 day before and after the specific year and month.
+
+        len_before_timeframe_filter = len(df)
+        lower_bound_date = datetime(source_year, source_month, 1) - timedelta(days=1)
+
+        next_month = source_month + 1 if source_month < 12 else 1
+        next_year = source_year if source_month < 12 else source_year + 1
+        upper_bound_date = datetime(next_year, next_month, 1)
+
+        pickup_naive = df['tpep_pickup_datetime'].dt.tz_convert(None)
+        df = df[(pickup_naive >= lower_bound_date) & (pickup_naive <= upper_bound_date)]
+
+        len_after_timeframe_filter = len(df)
+        len_dropped_timeframe = len_before_timeframe_filter - len_after_timeframe_filter 
+        pct_dropped_timeframe = (len_dropped_timeframe/len_before_timeframe_filter*100) if len_before_timeframe_filter else 0
+
+        logger.info(f"Timeframe plausibility filter complete: {len_dropped_timeframe:,} rows removed, {len_after_timeframe_filter:,} remaining | dropped percentage: {pct_dropped_timeframe:.1f}% ")
+
 
         # Derive trip_duration_minutes
         df['trip_duration_minutes'] = (

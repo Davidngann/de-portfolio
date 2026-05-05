@@ -78,6 +78,11 @@ x-airflow-common:
     # The following line can be used to set a custom config file, stored in the local config folder
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
 
+
+    # OVERRIDE
+    AIRFLOW__SCHEDULER__SCHEDULER_ZOMBIE_TASK_THRESHOLD: '1200'
+    AIRFLOW__CELERY__WORKER_TIMEOUT: '3600'
+
     # Project ENV
     # -- CONNECTION --
     AIRFLOW_CONN_NYC_TAXI_PG: 'postgresql://${DB_USER}:${DB_PASSWORD}@host.docker.internal:5433/${DB_NAME}'
@@ -86,6 +91,7 @@ x-airflow-common:
     # -- VARIABLE --
     AIRFLOW_VAR_PIPELINE_MODE: '${PIPELINE_MODE:-elt}'
     AIRFLOW_VAR_SOURCE_FILE: '${SOURCE_FILE}'
+    AIRFLOW_VAR_BATCH_SIZE: '${BATCH_SIZE}'
 
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags

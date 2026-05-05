@@ -2,9 +2,15 @@ CREATE DATABASE taxi_db_test;
 
 \c taxi_db_test
 
+DROP SCHEMA IF EXISTS reporting CASCADE;
+DROP SCHEMA IF EXISTS staging CASCADE;
+DROP SCHEMA IF EXISTS raw CASCADE;
+
+-- DROP ALL RELATED TABLES IF EXISTS
+
 -- RAW LAYER
-CREATE SCHEMA IF NOT EXISTS raw;
-CREATE TABLE IF NOT EXISTS raw.yellow_trips(
+CREATE SCHEMA raw;
+CREATE TABLE raw.yellow_trips(
     trip_id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     VendorID              TEXT,
     tpep_pickup_datetime  TEXT,
@@ -33,8 +39,8 @@ CREATE TABLE IF NOT EXISTS raw.yellow_trips(
 
 
 -- STAGING LAYER
-CREATE SCHEMA IF NOT EXISTS staging;
-CREATE TABLE IF NOT EXISTS staging.yellow_trips (
+CREATE SCHEMA staging;
+CREATE TABLE staging.yellow_trips (
     trip_id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     pickup_at               TIMESTAMPTZ NOT NULL,
     dropoff_at              TIMESTAMPTZ NOT NULL,
@@ -53,8 +59,8 @@ CREATE TABLE IF NOT EXISTS staging.yellow_trips (
 
 
 -- REPORTING LAYER
-CREATE SCHEMA IF NOT EXISTS reporting;
-CREATE TABLE IF NOT EXISTS reporting.daily_metrics(
+CREATE SCHEMA reporting;
+CREATE TABLE reporting.daily_metrics(
     metric_date                 DATE PRIMARY KEY,
     total_trips                 INT NOT NULL,
     total_revenue               NUMERIC(10,2) NOT NULL,

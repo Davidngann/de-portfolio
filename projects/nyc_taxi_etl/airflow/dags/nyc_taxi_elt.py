@@ -5,7 +5,6 @@ from datetime import timedelta
 from pathlib import Path
 import pendulum
 from airflow.sdk import dag, task
-from callbacks import on_task_failure
 from airflow.providers.slack.notifications.slack_webhook import send_slack_webhook_notification
 from airflow.providers.standard.sensors.filesystem import FileSensor
 
@@ -27,8 +26,8 @@ slack_webhook_on_task_failure = send_slack_webhook_notification(
 
 @dag(
     dag_id = "nyc_taxi_elt",
-    schedule = "@daily",
-    start_date = pendulum.datetime(2026,1,1, tz = "UTC"),
+    schedule = "@monthly",
+    start_date = pendulum.datetime(2026,2,1, tz = "UTC"),
     catchup = False,
     tags = ["nyc-taxi", "elt", "etl"],
     max_active_runs=1,
@@ -48,6 +47,7 @@ def nyc_taxi_elt():
       - "etl": transform in Python -> load staging
     Both paths converge at staging_to_reporting.
     """
+
     # Helper
     def _get_config() -> dict:
         from airflow.providers.postgres.hooks.postgres import PostgresHook
@@ -64,16 +64,17 @@ def nyc_taxi_elt():
         "batch_size": int(Variable.get("batch_size", default=5000)),
         }
     
-    def _run_sql(filename: str) -> None:
+    def _run_sql(filename: str, source_file: str = None) -> None:
         from airflow.providers.postgres.hooks.postgres import PostgresHook
 
         sql = (SQL_DIR / filename).read_text(encoding="utf-8")
-        PostgresHook(CONN_ID).run(sql)
+        parameters = {"source_file": source_file} if source_file else None
+        PostgresHook(CONN_ID).run(sql, parameters=parameters)
 
 
     wait_for_file = FileSensor(
         task_id = "wait_for_file",
-        filepath = "/opt/airflow/data/{{ var.value.source_file }}",
+        filepath = "/opt/airflow/data/yellow_tripdata_{{ logical_date.strftime('%Y-%m') }}.parquet",
         poke_interval = 30,
         timeout=300,
         mode="poke",
@@ -81,15 +82,15 @@ def nyc_taxi_elt():
     )
 
     # Extract
-    @task
-    def extract() -> str:
+    @task()
+    def extract(**context) -> str:
         from src.extract import extract
-        from airflow.sdk import Variable
 
-        source_path = Variable.get("source_file")
+        logical_date = context['logical_date']
+        source_file = f"yellow_tripdata_{logical_date.strftime('%Y-%m')}.parquet"
         output_path = "/tmp/nyc_taxi_raw.parquet"
 
-        df = extract(source_path)
+        df, _, _ = extract(source_file)
         df.to_parquet(output_path, index=False)
 
         return output_path
@@ -105,57 +106,55 @@ def nyc_taxi_elt():
 
     # ELT PATH
     @task
-    def load_raw(parquet_path: str) -> str:
+    def load_raw(parquet_path: str, **context) -> str:
         import pandas as pd
         from src.load import load
-        from airflow.sdk import Variable
-        from airflow.providers.postgres.hooks.postgres import PostgresHook
 
-        source_file=Variable.get("source_file")
+        logical_date = context['logical_date']
+        source_file = f"yellow_tripdata_{logical_date.strftime('%Y-%m')}.parquet"
 
-        PostgresHook(CONN_ID).run(
-            "DELETE FROM raw.yellow_trips WHERE source_file = %s",
-            parameters=(source_file,)
-        )
         df = pd.read_parquet(parquet_path)
         load(df, _get_config(), "raw", source_file)
 
         return "raw.yellow_trips"
     
     @task
-    def raw_to_staging(upstream: str) -> str:
-        _run_sql("raw_to_staging.sql")
+    def raw_to_staging(upstream: str, **context) -> str:
+        logical_date = context["logical_date"]
+        source_file = f"yellow_tripdata_{logical_date.strftime('%Y-%m')}.parquet"
+        _run_sql("raw_to_staging.sql", source_file=source_file)
         return "staging.yellow_trips"
     
 
     # ETL Path
-    @task
-    def transform(input_path: str) -> str:
+    @task()
+    def transform(parquet_path: str, **context) -> str:
         import pandas as pd
         from src.transform import transform
         # from src.validate import validate_dataframe
 
-        df = pd.read_parquet(input_path)
-        df_clean = transform(df)
+        logical_date = context["logical_date"]
+
+
+        df = pd.read_parquet(parquet_path)
+        df_clean = transform(df, 
+                             source_year = logical_date.year,
+                             source_month= logical_date.month)
         # validate_dataframe(df_clean, stage="transform")
 
-        output_path = "/tmp/nyc_taxi_transformed.parquet"
-        df_clean.to_parquet(output_path, index=False)
+        output_path  = "/tmp/nyc_taxi_transformed.parquet"
+        df_clean.to_parquet(output_path , index=False)
         return output_path
 
 
     @task
-    def load_staging(parquet_path: str) -> str:
+    def load_staging(parquet_path: str, **context) -> str:
         import pandas as pd
         from src.load import load
-        from airflow.sdk import Variable
         from airflow.providers.postgres.hooks.postgres import PostgresHook
 
-        source_file = Variable.get("source_file")
-        PostgresHook(CONN_ID).run(
-            "DELETE FROM staging.yellow_trips WHERE source_file=%s",
-            parameters=(source_file,)
-        )
+        logical_date = context['logical_date']
+        source_file = f"yellow_tripdata_{logical_date.strftime('%Y-%m')}.parquet"
 
         df = pd.read_parquet(parquet_path)
         load(df, _get_config(), "staging", source_file)
@@ -163,28 +162,29 @@ def nyc_taxi_elt():
         return "staging.yellow_trips"
     
     
-    
     # Converge
     @task(trigger_rule="none_failed_min_one_success")
-    def staging_to_reporting() ->str:
+    def staging_to_reporting(**context) ->str:
         from airflow.providers.postgres.hooks.postgres import PostgresHook
 
-        _run_sql("staging_to_reporting.sql")
+        logical_date = context['logical_date']
+        source_file = f"yellow_tripdata_{logical_date.strftime('%Y-%m')}.parquet"
+        _run_sql("staging_to_reporting.sql", source_file)
         return "reporting.daily_metrics"
 
         
     # Wiring workflow
     # truncated = truncate_all()
-    raw_path = extract()
+    extracted = extract()
     b = branch()
-    wait_for_file >> raw_path >> b
+    wait_for_file >> extracted >> b
 
     # ELT Path
-    elt_loaded = load_raw(raw_path)
+    elt_loaded = load_raw(extracted)
     elt_staged = raw_to_staging(elt_loaded)
 
     # ETL Path
-    etl_transformed = transform(raw_path)
+    etl_transformed = transform(extracted)
     etl_loaded = load_staging(etl_transformed)
 
     # Converge

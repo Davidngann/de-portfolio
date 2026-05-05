@@ -52,3 +52,6 @@ scratch_run.py
 # Pytest
 .coverage
 htmlcov/
+
+# Airflow
+airflow/

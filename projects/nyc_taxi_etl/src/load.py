@@ -86,15 +86,15 @@ def _to_python_scalar(v):
 
 def execute_sql_file(filepath:str, config:dict) -> None:
     conn = _get_connection(config)
+    source_file = config['source_file']
     try:
         with conn:
             with conn.cursor() as cur:  
                 logger.info(f"Starting SQL script: {filepath}")
                 with open(filepath, "r", encoding="utf-8") as sql_file:
                     sql_script = sql_file.read()
-                cur.execute(sql_script)
+                cur.execute(sql_script, {"source_file": source_file})
                 logger.info(f"SQL script executed: {filepath} | PSQL Status: {cur.statusmessage} | Rows affected: {cur.rowcount:,}")
-                logger.info(f"Successfully executed sql script: {filepath}")
     except (OSError, psycopg2.Error) as e:
         msg = f"Error during executing SQL Script from {filepath}: {e}"
         logger.error(msg)
@@ -218,6 +218,19 @@ def load(df: pd.DataFrame, config:dict, target_schema: str, source_file: str)-> 
 
     # --- Start loading process
     try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"DELETE FROM {target_schema}.yellow_trips WHERE source_file = %s",
+                    (source_file,)
+                )
+                deleted = cur.rowcount
+                if deleted > 0:
+                    logger.warning(
+                        f"Idempotency check: deleted {deleted:,} existing rows "
+                        f"for '{source_file}' in {target_schema} before reload"
+                    )
+
         _batch_insert(conn, insert_sql, df, INSERT_COLUMNS, batch_size, target_schema)
         if target_schema == "staging":
             validate_row_counts(conn, total_rows, target_schema, source_file)

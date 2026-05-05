@@ -7,7 +7,7 @@ from airflow.sdk import dag, task
 
 @dag(
     dag_id="test_slack",
-    schedule=None,
+    schedule='*/10 * * * *',
     start_date=pendulum.datetime(2026, 1, 1, tz="UTC"),
     catchup=False,
 )

@@ -2,6 +2,7 @@ import pandas as pd
 from pathlib import Path
 from src.exceptions import ExtractionError
 from src.logger import get_logger
+import re
 
 logger = get_logger(__name__)
 
@@ -30,7 +31,8 @@ EXPECTED_SOURCE_RAW_COLUMNS = {
 }
 
 
-def extract(source_file: str) -> pd.DataFrame:
+
+def extract(source_file: str) -> tuple[pd.DataFrame, int, int]:
     """
     Read the source Parquet file and validate the schema contract.
     
@@ -41,6 +43,16 @@ def extract(source_file: str) -> pd.DataFrame:
     
     data_dir = Path(__file__).parent.parent / "data"
     filepath = data_dir / source_file
+
+    # Validate filename pattern
+    FILENAME_PATTERN = re.compile(r'^yellow_tripdata_(\d{4})-(\d{2})\.parquet$')
+    match = FILENAME_PATTERN.match(source_file)
+    if not match:
+        msg = f"Invalid source filename: {source_file}. Expected format: yellow_tripdata_YYYY-MM.parquet"
+        logger.error(msg)
+        raise ExtractionError(msg)
+    year, month = int(match.group(1)), int(match.group(2))
+    logger.info(f"Filename validation passed for period: {year}-{month:02d}")
 
     logger.info(f"Starting extraction from {filepath}")
 
@@ -77,4 +89,4 @@ def extract(source_file: str) -> pd.DataFrame:
     
     logger.info(f"Extraction complete: {len(df):,} rows returned")
 
-    return df
+    return df, year, month

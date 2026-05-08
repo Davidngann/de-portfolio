@@ -30,7 +30,6 @@ def main():
     if target_schema == "raw":
         # Loading the raw data source into db directly, skipping transfor layer from python.
         load(df_raw, config, target_schema, source_file)
-        # validate_row_counts(config, df_raw, target_schema)
         execute_sql_file('sql/raw_to_staging.sql', config)
         
 
@@ -39,7 +38,6 @@ def main():
         # Validate transform, before loading
         validate_dataframe(df_clean, stage="transform")
         load(df_clean, config, target_schema, source_file)
-        # validate_row_counts(config, df_clean, target_schema)
 
     execute_sql_file('sql/staging_to_reporting.sql', config)
 

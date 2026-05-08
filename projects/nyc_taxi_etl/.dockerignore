@@ -9,6 +9,10 @@
 logs/*.log
 !logs/.gitkeep
 
+# Git
+.git
+.gitignore
+
 
 # Python cache
 __pycache__/
@@ -55,3 +59,13 @@ htmlcov/
 
 # Airflow
 airflow/
+
+# Documentation
+README.md
+CONTRIBUTING.md
+docs/
+
+# Docker/IDE
+docker-compose.yaml
+.vscode/
+.idea/

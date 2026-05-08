@@ -227,8 +227,7 @@ def load(df: pd.DataFrame, config:dict, target_schema: str, source_file: str)-> 
                 deleted = cur.rowcount
                 if deleted > 0:
                     logger.warning(
-                        f"Idempotency check: deleted {deleted:,} existing rows "
-                        f"for '{source_file}' in {target_schema} before reload"
+                        f"Idempotency check: deleted {deleted:,} existing rows for '{source_file}' in {target_schema} before reload"
                     )
 
         _batch_insert(conn, insert_sql, df, INSERT_COLUMNS, batch_size, target_schema)

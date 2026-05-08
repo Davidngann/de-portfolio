@@ -1,19 +1,19 @@
 # NYC Taxi ELT/ETL Pipeline
 
-An end-to-end ELT/ETL pipeline processing NYC yellow taxi trip records through a three-layer PostgreSQL schema (raw → staging → reporting). Supports both Python-based transformation (ETL) and database-native transformation (ELT) via a CLI flag.
+An end-to-end ELT/ETL pipeline processing NYC yellow taxi trip records through a three-layer PostgreSQL schema (raw → staging → reporting). Supports both Python-based transformation (ETL) and database-native transformation (ELT) via a CLI flag. Optionally orchestrated with Apache Airflow for monthly scheduled runs.
 
 Built as part of a 9-month data engineering curriculum.
 
 ---
 
 ## Problem Statement
-The NYC Taxi and Limousine commision publishes [monthly trip records](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) in parquet format. Raw data contains invalid records, such as zero-fare trips, zero-distance trips, negative durations, and timestamp errors (potentially from DST boundary crossing). This pipeline extracts the raw file, enforces documented quality rules, and load only valid records into the structured PostgreSQL schema for downstream analysis.
+The NYC Taxi and Limousine Commission publishes [monthly trip records](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) in parquet format. Raw data contains invalid records, such as zero-fare trips, zero-distance trips, negative durations, and timestamp errors (potentially from DST boundary crossing). This pipeline extracts the raw file, enforces documented quality rules, and loads only valid records into a structured PostgreSQL schema for downstream analysis.
 
 ---
 
 ## Architecture
 Architecture Diagram:
-![Pipeline Architecture](docs/architecture-diagram.png)
+![Pipeline Architecture](docs/architecture-diagram.svg)
 
 Current PSQL Schema:
 ![Three-layer PSQL schema architecture](<docs/three-layer schema architecture.png>)
@@ -44,9 +44,9 @@ yellow_tripdata_YYYY-MM.parquet
         │
         ▼
     raw_to_staging.sql       ← column selection, type casting, null handling,
-        │                      business rules, duration derivation (inside PSQL)
+        │                      business rules, timeframe filter, duration derivation (inside PSQL)
         ▼
-    staging_to_reporting.sql ← daily aggregation with ON CONFLICT DO NOTHING
+    staging_to_reporting.sql ← daily aggregation with ON CONFLICT DO UPDATE SET
 ```
  
 **ETL Path — transformation happens in Python**
@@ -59,7 +59,7 @@ yellow_tripdata_YYYY-MM.parquet
         │
         ▼
     transform()              ← column selection, null handling, business rules,
-        │                      type casting, duration derivation (pandas)
+        │                      type casting, timeframe filter, duration derivation (pandas)
         ▼
     validate_dataframe()     ← Great Expectations suite (6 expectations)
         │
@@ -67,24 +67,25 @@ yellow_tripdata_YYYY-MM.parquet
     load()                   ← batch insert to staging.yellow_trips
         │
         ▼
-    staging_to_reporting.sql ← daily aggregation with ON CONFLICT DO NOTHING
+    staging_to_reporting.sql ← daily aggregation with ON CONFLICT DO UPDATE SET
 ```
 
 ---
 
-## Tech stack
+## Tech Stack
 | Tool | Purpose |
 |---|---|
 | Python | Pipeline language |
 | pandas | Extraction and transformation |
 | psycopg2 | PostgreSQL connection and batch insert |
-| pyarrow| Parquet file reading |
+| pyarrow | Parquet file reading |
 | python-dotenv | Environment variable management |
 | Great Expectations | Data quality validation (ETL path) |
 | pytest | Unit and integration test suite |
 | PostgreSQL | Destination database |
 | Docker | Containerization |
-
+| Apache Airflow | Monthly DAG orchestration, ELT/ETL branching, Slack alerts |
+| Redis | Celery broker for Airflow CeleryExecutor |
 
 ---
 
@@ -95,10 +96,10 @@ nyc_taxi_etl/
 │   ├── config.py           # Environment variable loader with validation
 │   ├── exceptions.py       # Custom exceptions per pipeline stage
 │   ├── extract.py          # Parquet reading and schema validation
-│   ├── transform.py        # Cleaning, casting, and derivation (ETL path)
+│   ├── transform.py        # Cleaning, casting, timeframe filtering, and derivation (ETL path)
 │   ├── load.py             # Batch insert, SQL execution, connection management
 │   ├── validate.py         # Great Expectations suite
-│   └── logger.py           # Dual-handler logger (console + file)
+│   └── logger.py           # Dual-handler logger (console + file); skips setup when running under Airflow
 ├── sql/
 │   ├── 01_create_tables.sql        # Three-layer schema DDL for production
 │   ├── 02_create_test_db.sql       # Three-layer schema DDL for testing
@@ -109,16 +110,22 @@ nyc_taxi_etl/
 │   ├── test_extract.py     # Extract stage tests
 │   ├── test_transform.py   # Transform stage tests
 │   └── test_load.py        # Load stage integration tests
-├── data/                   # Source files - gitignored
-├── docs/                   # for README.md attachment
-├── logs/                   # Pipeline logs - gitignored
+├── airflow/
+│   ├── dags/
+│   │   ├── nyc_taxi_elt.py # Monthly DAG with ELT/ETL branching and Slack failure alerts
+│   │   └── ping_slack.py   # Slack webhook connectivity test DAG
+│   ├── docker-compose.yaml # Airflow stack (scheduler, worker, API server, Redis, PostgreSQL metastore)
+│   └── .env.example        # Airflow environment variable template
+├── data/                   # Source parquet files — gitignored
+├── docs/                   # Architecture diagrams for README
+├── logs/                   # Pipeline logs — gitignored, created at runtime
 ├── .env.example            # Required environment variables
-├── requirements.txt        # Dependencies
-├── .dockerignore           # List of ignored files/folder for docker
-├── docker-compose.yml      # Config file for multi-containers etl
-├── Dockerfile              # Recipe to build the nyc-taxi-etl image
-├── log_parser.py           # Parse summary from the pipeline.log
-├── Makefile                # Config file to standardize the workflow
+├── requirements.txt        # Python dependencies
+├── .dockerignore           # Files excluded from Docker build
+├── docker-compose.yml      # ETL stack (PostgreSQL + ETL service)
+├── Dockerfile              # Python 3.13-slim image
+├── log_parser.py           # Parse summary from pipeline.log
+├── Makefile                # Standardized workflow commands
 └── run.py                  # Entry point with argparse
 ```
 
@@ -128,7 +135,7 @@ nyc_taxi_etl/
 ### OPTION 1 - Docker (RECOMMENDED)
 Requires Docker Desktop installed and running.
 
-### 1. Clone the repo and navigate to project folder
+### 1. Clone the repo and navigate to the project folder
 ```bash
 git clone https://github.com/Davidngann/de-portfolio.git
 cd de-portfolio/projects/nyc_taxi_etl
@@ -136,30 +143,30 @@ cd de-portfolio/projects/nyc_taxi_etl
 
 ### 2. Place your source parquet file in `data/` and edit `.env`
 Download Yellow Taxi trip records (Parquet format) from the [TLC Trip Record Data page](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) and place the file in the `data/` folder.
-Then, edit the environment variables:
+Then, copy and edit the environment variables:
 
 ```bash
 cp .env.example .env # Edit .env with your preferred PostgreSQL credentials and source filename
 ```
 
-### 3. Spin up dbx (PSQL) service:
+### 3. Spin up the dbx (PostgreSQL) service
 ```bash
 make docker-up
 ```
 
-### 4. Run the pipeline:
+### 4. Run the pipeline
 
 ```bash
 make run
 ```
-It will runs the ELT pipeline. Logs are written to `logs/pipeline.log`.
+Runs the ELT pipeline. Logs are written to `logs/pipeline.log`.
 
-To run the ETL path instead of the default ELT path:
+To run the ETL path instead:
 ```bash
 make run-staging
 ```
 
-To bring down and remove all the docker containers and volume, run:
+To bring down and remove all docker containers and volumes:
 ```bash
 make docker-wipe
 ```
@@ -167,8 +174,8 @@ make docker-wipe
 Visit the image on Docker Hub: [Docker Hub image](https://hub.docker.com/r/davidngan/nyc-taxi-etl)
 
 **NOTE**
-By default, Docker-compose will try to build the etl image locally.  
-If you want to pull from docker hub instead, swap the comment in `docker-compose.yml`:
+By default, docker-compose will build the etl image locally.  
+To pull from Docker Hub instead, swap the comment in `docker-compose.yml`:
 
 ```yaml
 # Comment this out:
@@ -178,25 +185,26 @@ If you want to pull from docker hub instead, swap the comment in `docker-compose
 image: davidngan/nyc-taxi-etl:latest
 ```
 ---
-To run CI workflow:
+To run the CI workflow:
 ```bash
 make docker-wipe # Bring everything down
-make build # Ensure clean build
-make docker-up # Bring dbx service up
-make ci # Run CI workflow and tear down all services and volumes.
+make build       # Ensure clean build
+make docker-up   # Bring dbx service up
+make ci          # Run CI workflow and tear down all services and volumes
 ```
 
 ---
 ### OPTION 2 - Local Setup (MANUAL)
 Requires PostgreSQL installed and running.
-### 1. Clone the repo
+
+#### 1. Clone the repo
  
 ```bash
 git clone https://github.com/Davidngann/de-portfolio.git
 cd de-portfolio/projects/nyc_taxi_etl
 ```
  
-### 2. Create virtual environment
+#### 2. Create virtual environment
  
 ```bash
 python -m venv .venv
@@ -204,34 +212,33 @@ python -m venv .venv
 source .venv/bin/activate    # Mac/Linux
 ```
  
-### 3. Install dependencies
+#### 3. Install dependencies
  
 ```bash
 make install
 ```
  
-### 4. Configure environment
+#### 4. Configure environment
  
 ```bash
 cp .env.example .env
 # Edit .env with your PostgreSQL credentials and source filename
 ```
  
-### 5. Download source data
+#### 5. Download source data
  
 Download Yellow Taxi trip records (Parquet format) from the [TLC Trip Record Data page](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) and place the file in the `data/` folder.
  
-### 6. Create the destination schemas
+#### 6. Create the destination schemas
  
 ```bash
-# Create `taxi_db` (production) database,
+# Create taxi_db (production) database, then run:
 psql -U postgres -c "CREATE DATABASE taxi_db"
-# then run:
 psql -U {username} -d taxi_db -f sql/01_create_tables.sql
-psql -U {username} -f sql/02_create_test_db.sql # This sql will create the taxi_db_test for you.
+psql -U {username} -f sql/02_create_test_db.sql  # Creates taxi_db_test for the test suite
 ```
  
-### 7. Run the pipeline
+#### 7. Run the pipeline
  
 ```bash
 # ELT path (default) — loads raw data to PostgreSQL, transforms via SQL
@@ -243,34 +250,118 @@ python run.py --target-schema staging
 
 ---
 
+### OPTION 3 - Airflow Orchestration (OPTIONAL)
+Runs the pipeline as a monthly scheduled DAG with ELT/ETL branching, a FileSensor wait, and Slack failure alerts.  
+Requires Docker Desktop and the ETL stack (OPTION 1) already running.
+
+#### 1. Configure the Airflow environment
+
+```bash
+cp airflow/.env.example airflow/.env
+# Edit airflow/.env with Airflow credentials, Slack webhook URL, and DB connection details
+```
+
+#### 2. Start the Airflow stack
+
+```bash
+make airflow-up
+```
+
+Access the Airflow UI at `http://localhost:8080`.
+
+#### 3. Wire Airflow connections
+
+In the Airflow UI (Admin → Connections), create:
+
+| Conn ID | Type | Details |
+|---|---|---|
+| `nyc_taxi_pg` | Postgres | Host: `host.docker.internal`, Port: `5433`, Schema: `taxi_db` |
+| `slack_webhook` | HTTP | Host: your Slack incoming webhook URL |
+
+Alternatively, set these as environment variables in `airflow/.env` — the stack reads them on startup via the Airflow connections env var format.
+
+#### 4. Configure Airflow Variables
+
+In the Airflow UI (Admin → Variables), set:
+
+| Key | Example value | Notes |
+|---|---|---|
+| `PIPELINE_MODE` | `elt` | `elt` routes to ELT path; `etl` routes to ETL path |
+| `BATCH_SIZE` | `5000` | Rows per insert batch |
+
+`SOURCE_FILE` is derived automatically from the DAG's `logical_date` (e.g., a run with `logical_date=2026-02-01` processes `yellow_tripdata_2026-02.parquet`). No manual variable needed.
+
+#### 5. Trigger a run
+
+Trigger the `nyc_taxi_elt` DAG manually from the UI, backfill, or wait for the monthly schedule (`@monthly`, starting 2026-02-01).
+
+#### DAG structure
+
+```
+FileSensor (wait for source parquet)
+        │
+        ▼
+    extract
+        │
+        ▼
+    branch (PIPELINE_MODE variable)
+       ┌──────────────────────┐
+       ▼                      ▼
+   [ELT path]            [ETL path]
+   load_raw              transform
+       │                      │
+       ▼                      ▼
+   raw_to_staging         load_staging
+       │                      │
+       └──────────┬───────────┘
+                  ▼
+         staging_to_reporting
+```
+
+On any task failure, a Slack message is sent with the task name, exception, and log URL.
+Example:
+![Notification on Dag Failure](<docs/slack notif on failure.jpg>)
+
+#### Tear down the Airflow stack
+
+```bash
+make airflow-down  # Stop containers, keep volumes
+make airflow-wipe  # Stop containers and delete volumes
+```
+
+---
+
 ## Available Make Commands
 | Command | Description |
 |---|---|
 | `make install` | Install dependencies from requirements.txt locally |
 | `make build` | Build the etl container image |
 | `make run` | Run the ELT pipeline (loads to raw) |
-| `make run-staging` | Run the ETL pipeline (transforms in Python, loads to staging) | 
-| `make test` | Run the full test suite |
+| `make run-staging` | Run the ETL pipeline (transforms in Python, loads to staging) |
+| `make test` | Run the full test suite in Docker |
 | `make clean` | Remove Python cache files |
-| `make docker-up` | Start database container (dbx) |
-| `make docker-down` | Stop containers, keep volume (dbx) |
+| `make docker-up` | Start the database container (dbx) |
+| `make docker-down` | Stop containers, keep volume |
 | `make docker-wipe` | Stop containers and delete volume |
-| `make logs` | Tail dbx containers logs |
+| `make logs` | Tail dbx container logs |
 | `make live-logs` | Tail containers in real time while pipeline is running |
 | `make parse-logs` | Print log summary with error count from pipeline.log |
 | `make ci` | Build image, start stack, run tests, tear down. Leaves stack running on test failure |
-| `make ci-local` | Build image, start stack, run tests, and tear down the stack even if there is an error |
+| `make ci-local` | Build image, start stack, run tests, and tear down even if tests fail |
+| `make airflow-up` | Start the full Airflow stack (scheduler, worker, API, Redis, PostgreSQL metastore) |
+| `make airflow-down` | Stop Airflow containers, keep volumes |
+| `make airflow-wipe` | Stop Airflow containers and delete volumes |
 
 
 
 ---
 
-## Data quality rules
+## Data Quality Rules
 ### Column selection (10 of 20 used in staging)
  
 | Column | Kept | Reason |
 |---|---|---|
-| `tpep_pickup_datetime` | ✓ | Required for duration derivation |
+| `tpep_pickup_datetime` | ✓ | Required for duration derivation and timeframe validation |
 | `tpep_dropoff_datetime` | ✓ | Required for duration derivation |
 | `passenger_count` | ✓ | Operational metric |
 | `trip_distance` | ✓ | Core business metric |
@@ -280,6 +371,7 @@ python run.py --target-schema staging
 | `tip_amount` | ✓ | Financial metric |
 | `total_amount` | ✓ | Core financial metric |
 | `payment_type` | ✓ | Operational metric |
+
 The remaining 10 columns are preserved in `raw.yellow_trips` for auditability.
 
 
@@ -297,14 +389,24 @@ The remaining 10 columns are preserved in `raw.yellow_trips` for auditability.
 | `payment_type` | KEEP | Row is usable without payment method |
 
 
-### Business rules filter
+### Business rule filters
 | Rule | Reason |
 |---|---|
 | `trip_distance > 0` | Zero-distance trips are not real trips |
 | `fare_amount > 0` | Zero-fare trips are not valid records |
-| `total_amount > 0` | Zero total amount trips are not valid records |
-| `trip_duration_minutes > 0` | Negative duration indicates a timestamp error |
+| `total_amount > 0` | Zero-total trips are not valid records |
+| `trip_duration_minutes > 0` | Negative or zero duration indicates a timestamp error |
 | `trip_duration_minutes ≤ 1440` | Trips over 24 hours treated as corrupt data |
+
+### Timeframe filter
+TLC parquet files include a small number of trips whose pickup timestamps fall outside the nominal month (e.g., straggler records from the previous or next month). The pipeline retains trips within a ±1 day window around the source month boundaries and drops any records outside that window.
+
+| Rule | Reason |
+|---|---|
+| `pickup_at ≥ first_day_of_month − 1 day` | Allows boundary stragglers from the prior month |
+| `pickup_at ≤ last_day_of_month + 1 day` | Allows boundary stragglers from the next month |
+
+Applied in `transform.py` (ETL path) and in `raw_to_staging.sql` (ELT path).
 
 ---
 ## Sample Results
@@ -346,7 +448,6 @@ Load time: ~15 min 58 sec · Batch size: 5,000 · Total batches: 795
 2026-03-28 17:22:01,292 | INFO | src.load | Successfully executed sql script: sql/staging_to_reporting.sql
 2026-03-28 17:22:01,294 | INFO | src.load | Database connection closed
 2026-03-28 17:22:01,295 | INFO | __main__ | Pipeline complete
-
 ```
 
 </details>
@@ -404,14 +505,14 @@ Load time: ~7 min 46 sec · Batch size: 5,000 · Total batches: 735
 ---
 
 ## Testing
-### Test Suite overview
+### Test Suite Overview
 | File | Tests | What it covers |
 |---|---|---|
-| `test_extract.py` | 5 | Schema validation, missing file, unreadable file, missing columns, empty file |
-| `test_transform.py` | 14 | Column selection, business rules, null handling, type casting, column rename, duration filters, row counts |
-| `test_load.py` | 10 | Row counts to raw and staging, bad connection config, batch size variations, invalid schema, execute_sql_file errors, validate_row_counts |
+| `test_extract.py` | 8 | Schema validation, missing file, unreadable file, missing columns, empty file |
+| `test_transform.py` | 15 | Column selection, business rules, null handling, type casting, column rename, timeframe filter, duration filters, row counts |
+| `test_load.py` | 14 | Row counts to raw and staging, bad connection config, batch size variations, invalid schema, execute_sql_file errors, validate_row_counts |
 
-### Running tests
+### Running Tests
  
 ```bash
 # Full suite
@@ -419,14 +520,15 @@ pytest
 
 # Verbose output
 pytest -v
-# or run command below for test in docker.
+
+# In Docker (recommended)
 make test
  
 # Single file
 pytest tests/test_transform.py -v
  
 # With coverage report
-pytest --cov=src --cov-report=term-missing
+pytest tests/ --cov=src --cov-report=term-missing
 ```
 
 ### Coverage
@@ -434,16 +536,18 @@ pytest --cov=src --cov-report=term-missing
 | File | Coverage | Notes |
 |---|---|---|
 | `extract.py` | 100% | — |
-| `transform.py` | 94% | Generic `except Exception` handler not reachable in tests |
-| `load.py` | 86% | Batch failure path is not tested |
+| `transform.py` | 95% | Generic `except Exception` handler not reachable in tests |
+| `load.py` | 88% | Per-batch failure path is not tested |
+| `logger.py` | 91% | — |
+| `exceptions.py` | 100% | — |
 | `validate.py` | 0% | GE runs via `run.py`, not called in test suite |
 | `config.py` | 0% | Verified via pipeline run |
  
-**Overall: 78%**
+**Overall: 80%**
 
 
 ### Great Expectations
-6 expectations run automatically after `transform()` before `load()`:
+6 expectations run automatically after `transform()` and before `load()` in the ETL path:
  
 | Column | Expectation |
 |---|---|
@@ -454,51 +558,154 @@ pytest --cov=src --cov-report=term-missing
  
 Pipeline raises `TransformationError` and halts if any expectation fails.
 
-### Known coverage gaps
+### Known Coverage Gaps
  
 - `validate.py` — no pytest coverage. Verified manually by injecting a bad row and confirming `TransformationError` is raised.
 - `load.py` — SQL script execution error paths verified manually in PgAdmin.
 - `load.py` — per-batch failure path not tested.
-- Great Expectations applies to ETL path only.
+- Great Expectations applies to the ETL path only.
 
+
+---
 
 ## Known Limitations
-**No raw layer idempotency** — Re-running the pipeline on the same source file appends duplicate rows to `raw.yellow_trips`. There is no deduplication at the raw layer. Staging row counts will exceed raw counts on repeated runs.
- 
-**Two transformation paths require manual sync** — Business rule changes must be applied to both `transform.py` and `raw_to_staging.sql` independently. No automated test verifies parity between the two paths.
- 
-**Full file load only** — The pipeline loads the entire source file on every run. Incremental loading is not implemented.
- 
-**Single file only** — The pipeline processes one file specified in `SOURCE_FILE`. Multiple files are not detected or processed automatically.
 
-**Source data contains boundary dates from adjacent months**: The TLC parquet files for a given month include trips whose pickup timestamps fall outside that month. For example, `yellow_tripdata_2025-04.parquet` contains trips recorded on 2025-03-31 and 2025-05-01. As a result, `reporting.daily_metrics` will contain rows for dates outside the nominal month range. 
-If `yellow_tripdata_2025-03.parquet` and `yellow_tripdata_2025-04.parquet` are both loaded into the same database, both files will contribute trips for 2025-03-31. The ON CONFLICT DO NOTHING guard on reporting.daily_metrics means whichever month runs first wins. The second run's data for that boundary date is silently discarded. The same applies to the last day of each month. 
+**Two transformation paths require manual sync**  
+Business rule changes must be applied to both `transform.py` 
+and `raw_to_staging.sql` independently. No automated test 
+verifies parity between the two paths.
 
+**Source data contains boundary dates**  
+NYC TLC parquet files include trips whose pickup timestamps 
+fall outside the nominal month. For example, the March file 
+contains trips recorded on Feb 28 and Apr 1. The timeframe 
+filter allows ±1 day tolerance. If two adjacent months are 
+both loaded, the boundary date row in `reporting.daily_metrics` 
+reflects whichever month ran most recently 
+(`ON CONFLICT DO UPDATE`).
+
+**Full file load only**  
+The pipeline loads the entire source file on every run. 
+Incremental loading is not implemented.
+
+**GIL contention on large files**  
+Files with millions of rows may cause Airflow UI unresponsiveness 
+during `load_raw` due to psycopg2 GIL contention. 
+Reduce `batch_size` if this occurs.
 ---
 
 ## RUNBOOK
+This document covers the most likely failure modes for both the 
+standalone runner (`run.py`) and the Airflow DAG (`nyc_taxi_elt`).
+
+---
 ### Pipeline exits with `ExtractionError`
 **Symptom:** `ERROR | src.extract | Source file not found: /app/data/`  
-Cause: Source file missing or column schema mismatch  
-Debug: Run `cat logs/pipeline.log` or `make parse-logs`  
-Fix: Verify `data/` contains the correct parquet file and `SOURCE_FILE` in `.env` match the filename exactly  
+
+**Cause**: Source file missing or column schema mismatch  
+
+**Debug**: Run `cat logs/pipeline.log` or `make parse-logs` 
+
+**Fix**: Verify `data/` contains the correct parquet file and `SOURCE_FILE` in `.env` matches the filename exactly  
 Then re-run with `make run` (ELT) or `make run-staging` (ETL)
 
+---
 ### Pipeline exits with `LoadError: Database connection failed:`  
 **Symptom:** `ERROR | src.load | Database connection failed: FATAL: password authentication failed`  
-Cause: Wrong database credentials.  
-Debug: Run `cat logs/pipeline.log` or `make parse-logs`  
-Fix: Verify the database credentials in `.env` match the actual database credentials.  
+
+**Cause**: Wrong database credentials  
+
+**Debug**: Run `cat logs/pipeline.log` or `make parse-logs`  
+
+**Fix**: Verify the database credentials in `.env` match the actual database credentials  
 Then re-run with `make run` (ELT) or `make run-staging` (ETL)
 
+---
+### `pytest` fails with `FATAL: database "taxi_db_test" does not exist`
+**Symptom**: Running pytest suite and got multiple test_load erros with `database "taxi_db_test" does not exist`  
 
-### `make test` fails with `FATAL:  database "taxi_db_test" does not exist"`
-Cause: Test database was not created, Volume is stale  
-Debug: Run `make logs` to confirm initdb errors  
-Fix: Ensure `02_create_test_db.sql` exists under volume in dbx service, then `make docker-wipe` -> `make docker-up` -> `make test`  
+**Cause**: Test database was not created  
+
+**Debug**: Check if taxi_db_test exists in PSQL  
+
+**Fix**: Ensure `02_create_test_db.sql` exists has been executed correctly
+
+---
+### Airflow DAG stuck on `FileSensor`
+**Symptom**: `FileSensor` keep poking and finally failed  
+
+**Cause**: Source parquet file is not present at the expected path  
+
+**Debug**: Check `projects\nyc_taxi_etl\data\` folder  
+
+**Fix**: Ensure the file named `yellow_tripdata_YYYY-MM.parquet` (matching the DAG's `logical_date`) is placed in the `data/` directory before the sensor times out  
+
+---
+### `NonExistentTimeError`
+**Symptom**: Got an error with the term `NonExistentTimeError` for march, with error example:  `TransformationError: Unexpected error during transformation: 2026-03-08 02:31:49 NonExistentTimeError: 2026-03-08 02:31:49`  
+
+**Cause**: US Daylight Saving Time spring forward occurs on the second Sunday of March. Clocks jump from 2:00 AM to 3:00 AM. Any timestamp in the 2:00–2:59 AM window does not exist in `America/New_York`.  
+This only affects the **ETL path** (pandas `tz_localize`). 
+The ELT path (PostgreSQL) handles this silently.
+
+**Fix**:  
+`tz_localize` must include `nonexistent='shift_forward'` — 
+already applied in `transform.py`. If this error reappears, 
+verify the parameter is present:
+
+```python
+df['tpep_pickup_datetime'] = pd.to_datetime(
+    df['tpep_pickup_datetime']
+).dt.tz_localize(
+    'America/New_York',
+    nonexistent='shift_forward',
+    ambiguous='NaT'
+)
+```
+
+**Note on ambiguous timestamps (fall back)**  
+DST fall back (first Sunday of November) creates timestamps that occur twice. These are marked `NaT` and dropped by the null filter.
+This is intentional as the UTC offset cannot be determined.
+
+---
+### Zero rows after transformation
+**Symptom**: `ERROR - TransformationError: Transformation produced zero rows`  
+
+**Cause**: All rows were dropped by one of the filters. 
+Most likely: `source_year`/`source_month` mismatch between filename and the content. So, the timeframe filter is removing everything.
+
+**Debug**: Check what year/month is being passed  
+In Airflow: check the extract task log for `source_file` resolved value  
+In run.py: check the filename in `SOURCE_FILE`  
+
+**Fix**: Verify the file's actual data range matches the filename:  
+```python
+import pandas as pd
+df = pd.read_parquet('data/yellow_tripdata_YYYY-MM.parquet')
+print(df['tpep_pickup_datetime'].min())
+print(df['tpep_pickup_datetime'].max())
+```
+
+---
+### Slack alert not firing
+
+**Symptom**:
+Task fails but no Slack message received.
+
+**Cause**:
+`AIRFLOW_CONN_SLACK_WEBHOOK` not in correct JSON format.
+`SlackWebhookHook` requires the token in the `password` field.
+
+
+**Debug**: Check `SLACK_WEBHOOK_URL` variable in `projects\nyc_taxi_etl\airflow\.env` 
+
+**Fix**
+Fill `SLACK_WEBHOOK_URL` variable correctly with slack webhook token with format = `TXXXXX/BXXXXXX/XXXXXXXXX`.  It doesn't need the full url.
+
 
 
 ---
+
 ## Environment Variables
 | Variable | Required | Default | Description |
 |---|---|---|---|
@@ -508,5 +715,5 @@ Fix: Ensure `02_create_test_db.sql` exists under volume in dbx service, then `ma
 | `TEST_DB_NAME` | Yes | — | Test database name |
 | `DB_USER` | Yes | — | Database user |
 | `DB_PASSWORD` | Yes | — | Database password |
-| `SOURCE_FILE` | Yes | — | Parquet filename in `data/` |
+| `SOURCE_FILE` | Yes (manual runs) | — | Parquet filename in `data/` — derived from `logical_date` under Airflow |
 | `BATCH_SIZE` | No | `5000` | Rows per insert batch |

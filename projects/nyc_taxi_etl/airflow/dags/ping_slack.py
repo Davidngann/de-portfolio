@@ -6,12 +6,12 @@ from airflow.sdk import dag, task
 
 
 @dag(
-    dag_id="test_slack",
+    dag_id="ping_slack",
     schedule='*/10 * * * *',
     start_date=pendulum.datetime(2026, 1, 1, tz="UTC"),
     catchup=False,
 )
-def test_slack():
+def ping_slack():
     """
     Testing the slack webhook connection.
     """
@@ -26,4 +26,4 @@ def test_slack():
     send_test_message()
 
 
-test_slack()
+ping_slack()
